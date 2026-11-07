@@ -478,3 +478,10 @@ code { background: var(--elev); padding: 1px 6px; border-radius: 4px; font-size:
 kbd { font: 600 11px/1 "Segoe UI", system-ui, sans-serif; background: var(--hover); border: 1px solid #ffffff22; border-bottom-width: 2px; border-radius: 5px; padding: 2px 6px; color: var(--text); }
 .hotkey-list { line-height: 2.2; margin-top: 4px; }
 .settings .check { margin: 8px 0; }
+
+/* ------------------------------------------------------------ theme isolation */
+/* Elements that belong to the Glass theme only. */
+#glow, .brand-glass, .home-hero, .sec-label { display: none !important; }
+.quick-shelf { margin-top: 0; }
+.quick-shelf .sec-head { display: none; }
+.sec-head h2 { margin: 0 0 14px; }

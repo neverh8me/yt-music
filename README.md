@@ -31,7 +31,7 @@ A fast, unofficial YouTube Music desktop client written in Rust (Tauri 2). Searc
 - Offline downloads in high quality (Opus ~160 kbps, or AAC ~128 kbps), stored encrypted in our own `.ytmc` format like Spotify's offline cache, so they play only inside the app
 - Sign in with Google to import your YouTube Music likes and playlists
 - One-click updates: desktop downloads the new installer, verifies its signature and restarts; Android downloads the new APK
-- Interface in English, Ukrainian and Russian
+- Interface in English, Ukrainian and Russian; two themes: **Classic** and **Glass** (design by [@dopedasya](https://github.com/dopedasya))
 - Small and fast: ~14 MB binary, a song starts in ~0.2 s
 
 ## Install

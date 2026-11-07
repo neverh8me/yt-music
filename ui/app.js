@@ -22,6 +22,16 @@ const tracksLabel = (n) => t('tracks', { n });
 const kindLabel = (k) => (k ? t(`kind.${k}`) : '');
 const compact = (n) => new Intl.NumberFormat(locale(), { notation: 'compact', maximumFractionDigits: 1 }).format(n);
 const subsLabel = (n) => (n == null ? '' : t('subscribers', { n: compact(n) }));
+// Themes: "classic" (default) and "glass" (design by @dopedasya). theme-boot.js applies the
+// saved one before first paint; this switches live.
+const currentTheme = () => document.documentElement.dataset.theme || 'classic';
+function applyTheme(theme) {
+  if (theme !== 'glass') theme = 'classic';
+  try { localStorage.setItem('theme', theme); } catch { /* ignore */ }
+  document.documentElement.dataset.theme = theme;
+  $('#css-classic').disabled = theme !== 'classic';
+  $('#css-glass').disabled = theme !== 'glass';
+}
 const regionName = (code) => {
   try { return new Intl.DisplayNames([locale()], { type: 'region' }).of(code) || code; } catch { return code; }
 };
@@ -172,8 +182,11 @@ function card(kind, item) {
   </div>`;
 }
 
-const shelf = (title, items, kind) => !items?.length ? '' :
-  `<section class="shelf"><h2>${esc(title)}</h2><div class="grid">${items.map((i) => card(kind, i)).join('')}</div></section>`;
+/** Section heading: optional mono "// label" above the title, optional right-hand content. */
+const secHead = (title, label = '', right = '') => `<div class="sec-head"><div>${label ? `<div class="sec-label">// ${esc(label)}</div>` : ''}<h2>${esc(title)}</h2></div>${right}</div>`;
+
+const shelf = (title, items, kind, label = '') => !items?.length ? '' :
+  `<section class="shelf">${secHead(title, label)}<div class="grid">${items.map((i) => card(kind, i)).join('')}</div></section>`;
 
 function collectionHeader({ cover, kind, title, meta, round = false, actions = '', phClass = '' }) {
   return `<div class="hero">
@@ -195,6 +208,8 @@ const collectionActions = () => playBtn('play-page') + actBtn('shuffle-page', 's
 // cached data of the currently rendered collection page, used by action buttons
 let pageTracks = [];
 let pageCtx = null;
+// recently played tracks shown on the home page (seed for "Start radio")
+let homeRecent = [];
 // Page tint: a cover URL (colour computed in Rust) or a fixed '#hex'; set by views.
 let pageColor = null;
 
@@ -259,17 +274,33 @@ const views = {
       { go: 'liked', title: t('lib.liked'), cls: 'liked-cover', ic: 'heart-fill' },
       ...state.playlists.slice(0, 5).map((p) => ({ go: 'local-playlist', id: p.id, title: p.name, cover: p.cover })),
     ];
-    let html = `<div class="page home"><h1 class="greet">${esc(greet)}</h1>
+    homeRecent = recent;
+    const name = state.settings.account_name;
+    const heroLabel = name ? `${greet}, ${name}` : greet;
+    // Both themes' markup is rendered; each theme's stylesheet hides the other's parts.
+    let html = `<div class="page home">
+      <h1 class="greet">${esc(greet)}</h1>
+      <section class="home-hero">
+        <div class="sec-label">// ${esc(heroLabel)}</div>
+        <h1>${esc(t('home.heroTitle'))}</h1>
+        <p>${esc(t('home.heroSub'))}</p>
+        <div class="status-chip"><i class="dot"></i>${esc(t('home.heroChip', { liked: state.liked.size, offline: state.downloaded.size }))}</div>
+        <div class="hero-ctas">
+          <button class="pill-btn primary big" data-act="play-liked" ${state.liked.size ? '' : 'disabled'}>${icon('play')}${esc(t('home.playLiked'))}</button>
+          ${recent.length ? `<button class="pill-btn big" data-act="radio-recent">${icon('radio')}${esc(t('home.startRadio'))}</button>` : ''}
+        </div>
+      </section>
+      <section class="shelf quick-shelf">${secHead(t('home.quick'), t('home.lbl.quick'))}
       <div class="quick">${quick.map((q) => `<div class="quick-item" data-go="${q.go}" data-id="${esc(q.id ?? '')}">
         ${q.cover ? `<img src="${esc(q.cover)}" alt="">` : `<span class="qc ${q.cls || ''}">${icon(q.ic || 'music')}</span>`}
-        <span>${esc(q.title)}</span></div>`).join('')}</div>`;
-    if (recent.length) html += `<section class="shelf"><h2>${esc(t('home.recent'))}</h2>${trackRows(recent, { header: false, album: false })}</section>`;
+        <span>${esc(q.title)}</span></div>`).join('')}</div></section>`;
+    if (recent.length) html += `<section class="shelf">${secHead(t('home.recent'), t('home.lbl.history'))}${trackRows(recent, { header: false, album: false })}</section>`;
     for (const s of home.sections || []) {
       const title = t(`sec.${s.title}`, { name: s.param || '' });
-      if (s.tracks?.length) html += `<section class="shelf"><h2>${esc(title)}</h2>${trackRows(s.tracks.slice(0, 10), { header: false })}</section>`;
-      html += shelf(title, s.albums, 'album');
-      html += shelf(title, s.playlists, 'playlist');
-      html += shelf(title, s.artists, 'artist');
+      if (s.tracks?.length) html += `<section class="shelf">${secHead(title, t('home.lbl.tracks'))}${trackRows(s.tracks.slice(0, 10), { header: false })}</section>`;
+      html += shelf(title, s.albums, 'album', t('home.lbl.albums'));
+      html += shelf(title, s.playlists, 'playlist', t('home.lbl.playlists'));
+      html += shelf(title, s.artists, 'artist', t('home.lbl.artists'));
     }
     if (home.error) html += `<div class="note">${esc(t('home.recoFail', { e: home.error }))}</div>`;
     return html + '</div>';
@@ -423,6 +454,11 @@ const views = {
         <div class="row"><select id="lang-select" class="text-in select">
           ${Object.entries(LANGS).map(([k, v]) => `<option value="${k}" ${k === lang ? 'selected' : ''}>${esc(v)}</option>`).join('')}
         </select></div>
+        <h2 class="sub-h">${esc(t('set.theme'))}</h2>
+        <div class="seg theme-seg" role="radiogroup">
+          ${['classic', 'glass'].map((th) => `<label class="seg-opt"><input type="radio" name="theme" value="${th}" ${currentTheme() === th ? 'checked' : ''}>
+            <b>${esc(t(`theme.${th}`))}</b><small>${esc(t(`theme.${th}Sub`))}</small></label>`).join('')}
+        </div>
         <h2 class="sub-h">${esc(t('set.region'))}</h2>
         <p class="muted small">${esc(t('set.regionHint'))}</p>
         <div class="row"><select id="region-select" class="text-in select">
@@ -490,6 +526,7 @@ const afterRender = {
   lyrics() { syncLyrics(true); },
   settings() {
     $('#lang-select')?.addEventListener('change', (e) => setLang(e.target.value));
+    $$('input[name=theme]').forEach((r) => r.addEventListener('change', () => applyTheme(r.value)));
     $('#region-select')?.addEventListener('change', async (e) => {
       try { await api.setChartRegion(e.target.value); toast(t('toast.settingsSaved')); } catch (err) { toast(errText(err), 'err'); }
     });
@@ -725,6 +762,13 @@ const actions = {
   },
   'new-playlist': () => newPlaylist(),
   'radio-artist': () => { if (pageTracks[0]) startRadio(pageTracks[0]); },
+  'radio-recent': () => { if (homeRecent[0]) startRadio(homeRecent[0]); },
+  'play-liked': async () => {
+    try {
+      const tracks = await api.likedTracks();
+      if (tracks.length) player.playList(tracks, 0, { kind: 'liked', title: t('lib.liked') });
+    } catch (e) { toast(errText(e), 'err'); }
+  },
   'q-remove': (el) => { player.removeAt(Number(el.closest('.qrow').dataset.qidx)); },
   'check-update': async (el) => {
     el.disabled = true;

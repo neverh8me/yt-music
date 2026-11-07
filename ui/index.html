@@ -4,16 +4,51 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>YT Music</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css" id="css-classic">
+  <link rel="stylesheet" href="theme-glass.css" id="css-glass" disabled>
+  <script src="theme-boot.js"></script>
 </head>
 <body>
+  <!-- Ambient light arcs behind the glass UI (static, never repaints on scroll) -->
+  <svg id="glow" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <defs>
+      <linearGradient id="glow-rainbow" x1="0" x2="1" y1="0" y2="0">
+        <stop offset="0" stop-color="#5b8cff"/>
+        <stop offset=".35" stop-color="#ffffff"/>
+        <stop offset=".6" stop-color="#ff8a3d"/>
+        <stop offset="1" stop-color="#5b8cff"/>
+      </linearGradient>
+      <filter id="glow-b35" x="-20%" y="-40%" width="140%" height="180%"><feGaussianBlur stdDeviation="35"/></filter>
+      <filter id="glow-b9" x="-20%" y="-40%" width="140%" height="180%"><feGaussianBlur stdDeviation="9"/></filter>
+      <filter id="glow-b2" x="-20%" y="-40%" width="140%" height="180%"><feGaussianBlur stdDeviation="2"/></filter>
+      <filter id="glow-b100" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="100"/></filter>
+    </defs>
+    <circle cx="1400" cy="100" r="300" fill="#ff8a3d" opacity=".18" filter="url(#glow-b100)"/>
+    <circle cx="100" cy="1000" r="300" fill="#5b8cff" opacity=".16" filter="url(#glow-b100)"/>
+    <g class="arc" fill="none" transform="rotate(-8 730 880)">
+      <ellipse cx="730" cy="880" rx="1250" ry="450" stroke="url(#glow-rainbow)" stroke-width="90" opacity=".45" filter="url(#glow-b35)"/>
+      <ellipse cx="730" cy="880" rx="1250" ry="450" stroke="url(#glow-rainbow)" stroke-width="26" opacity=".7" filter="url(#glow-b9)"/>
+      <ellipse cx="730" cy="880" rx="1250" ry="450" stroke="#fff" stroke-width="6" opacity=".9" filter="url(#glow-b2)"/>
+      <ellipse cx="730" cy="880" rx="1250" ry="450" stroke="#fff" stroke-width="2"/>
+    </g>
+  </svg>
+
   <div id="app">
     <aside id="sidebar">
-      <div class="brand">
+      <!-- Classic theme brand -->
+      <div class="brand brand-classic">
         <span class="brand-dot"></span>
         <span class="brand-text">
           <span class="brand-name">YT Music</span>
           <span class="brand-sub">powered by Rust 🦀</span>
+        </span>
+      </div>
+      <!-- Glass theme brand (design by @dopedasya) -->
+      <div class="brand brand-glass">
+        <span class="brand-mark">Y<i>.</i></span>
+        <span class="brand-text">
+          <span class="brand-name">YT Music<i>.</i></span>
+          <span class="brand-sub">// powered by rust</span>
         </span>
       </div>
       <nav class="nav-main">
