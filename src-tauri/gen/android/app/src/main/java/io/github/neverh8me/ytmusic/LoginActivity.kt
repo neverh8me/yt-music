@@ -22,9 +22,24 @@ class LoginActivity : Activity() {
     const val EXTRA_COOKIE = "cookie"
     private const val START =
       "https://accounts.google.com/ServiceLogin?service=youtube&passive=true&continue=https%3A%2F%2Fmusic.youtube.com%2F"
-    // A regular mobile Chrome UA: Google refuses sign-in in browsers it detects as embedded.
-    private const val UA =
+    // Fallback only: a regular mobile Chrome UA.
+    private const val UA_FALLBACK =
       "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36"
+  }
+
+  /**
+   * The system WebView's own UA without its WebView markers ("; wv", "Version/4.0"), so it reads
+   * as mobile Chrome of the *same* version as the engine. Google refuses sign-in in browsers it
+   * detects as embedded, and also when the claimed Chrome version doesn't match what the engine
+   * can do ("This browser or app may not be secure"), e.g. Chrome 142 claimed on a WebView 92.
+   */
+  private fun userAgent(): String = try {
+    android.webkit.WebSettings.getDefaultUserAgent(this)
+      .replace("; wv)", ")")
+      .replace(Regex("""\s*Build/[^;)]*"""), "")
+      .replace(Regex("""\s*Version/[\d.]+"""), "")
+  } catch (e: Exception) {
+    UA_FALLBACK
   }
 
   private val main = Handler(Looper.getMainLooper())
@@ -38,7 +53,7 @@ class LoginActivity : Activity() {
     cookies.setAcceptThirdPartyCookies(web, true)
     web.settings.javaScriptEnabled = true
     web.settings.domStorageEnabled = true
-    web.settings.userAgentString = UA
+    web.settings.userAgentString = userAgent()
     // Don't announce the app package in X-Requested-With (Google uses it to spot WebViews).
     if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
       WebSettingsCompat.setRequestedWithHeaderOriginAllowList(web.settings, emptySet())
