@@ -70,6 +70,8 @@ pub struct Yt {
     ytdlp_slots: tokio::sync::Semaphore,
     /// One resolve per track id at a time; a second caller waits and reuses the cached URL.
     inflight: Mutex<HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,
+    /// YouTube player challenge solver (signed-in playback without yt-dlp, e.g. Android).
+    solver: crate::jsplayer::Solver,
 }
 
 // ------------------------------------------------------------------ conversions
@@ -176,7 +178,7 @@ impl Yt {
         let secure = crate::secure_store::SecureStorage::new(storage.clone(), session_key);
         let session = crate::secure_store::SecureStorage::new(storage.clone(), session_key);
         let mut b = RustyPipe::builder()
-            .storage_dir(storage)
+            .storage_dir(&storage)
             .storage(Box::new(secure))
             .timeout(Duration::from_secs(20));
         // YTUBEM_COUNTRY (e.g. "US") overrides the region used for charts/new releases.
@@ -187,6 +189,8 @@ impl Yt {
         }
         let rp = b.build()?;
         let http = reqwest::Client::builder().timeout(Duration::from_secs(10)).build()?;
+        let solver_dir = storage.parent().map(|p| p.join("jsplayer")).unwrap_or_else(|| storage.join("jsplayer"));
+        let solver = crate::jsplayer::Solver::new(reqwest::Client::builder().timeout(Duration::from_secs(30)).build()?, solver_dir);
         Ok(Self {
             rp,
             http,
@@ -196,6 +200,7 @@ impl Yt {
             ytdlp_dir,
             ytdlp_slots: tokio::sync::Semaphore::new(3),
             inflight: Mutex::new(HashMap::new()),
+            solver,
         })
     }
 
@@ -506,11 +511,158 @@ impl Yt {
                 }
             }
         } else {
-            self.stream_native_race(id, codec).await.context("couldn't get an audio stream")?
+            match self.stream_native_race(id, codec).await {
+                Ok(s) => s,
+                // 18+ (or otherwise sign-in-only) songs: ask as the signed-in user and solve the
+                // player's URL challenges ourselves.
+                Err(e) => match self.session_cookie() {
+                    Some(cookie) => self.stream_signed(id, codec, &cookie).await.with_context(|| format!("{e:#}"))?,
+                    None => return Err(e.context("couldn't get an audio stream")),
+                },
+            }
         };
         self.streams.lock().unwrap().insert(key, resolved.clone());
         self.inflight.lock().unwrap().remove(id);
         Ok(resolved)
+    }
+
+    /// Signed-in player request with clients that accept the account session (TV, embedded),
+    /// then the "n" and signature challenges solved from YouTube's player JS
+    /// (see jsplayer.rs). This is what plays 18+ songs where yt-dlp isn't available.
+    pub async fn stream_signed(&self, id: &str, codec: Codec, cookie: &str) -> Result<StreamInfo> {
+        let player = self.solver.player().await.context("YouTube player")?;
+        let visitor = self.visitor_id().await.unwrap_or_default();
+        let auth = crate::account::authorization(cookie, "https://www.youtube.com").ok_or_else(|| anyhow!("no SAPISID in the session"))?;
+        // Client configs copied from yt-dlp's INNERTUBE_CLIENTS (they accept the account cookies):
+        // (clientName, header id, version, user agent, extra client fields)
+        const SAFARI: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15,gzip(gfe)";
+        let clients: [(&str, &str, &str, &str, serde_json::Value); 3] = [
+            // Premium accounts: no PO token needed
+            ("WEB_CREATOR", "62", "1.20260708.06.00", SAFARI, serde_json::json!({})),
+            ("TVHTML5", "7", "5.20260707",
+             "Mozilla/5.0 (SMART-TV; Linux; Tizen 2.4.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/2.4.0 TV Safari/538.1",
+             serde_json::json!({ "deviceMake": "Samsung", "deviceModel": "UKS9800", "osName": "Tizen", "osVersion": "2.4.0" })),
+            ("TVHTML5", "7", "7.20260707.07.00",
+             "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/25.lts.30.1034943-gold (unlike Gecko), Unknown_TV_Unknown_0/Unknown (Unknown, Unknown)",
+             serde_json::json!({})),
+        ];
+        let mut errors: Vec<String> = vec![];
+        for (name, num, version, ua, extra) in clients {
+            let mut context = serde_json::json!({ "client": { "clientName": name, "clientVersion": version, "userAgent": ua, "hl": "en", "gl": "US" } });
+            if let Some(m) = extra.as_object() {
+                for (k, v) in m {
+                    context["client"][k] = v.clone();
+                }
+            }
+            if !visitor.is_empty() {
+                context["client"]["visitorData"] = visitor.clone().into();
+            }
+            let body = serde_json::json!({
+                "context": context,
+                "videoId": id,
+                "playbackContext": { "contentPlaybackContext": { "signatureTimestamp": player.sts, "html5Preference": "HTML5_PREF_WANTS" } },
+                "contentCheckOk": true,
+                "racyCheckOk": true,
+            });
+            let mut req = self
+                .http
+                .post("https://www.youtube.com/youtubei/v1/player?prettyPrint=false")
+                .header("X-YouTube-Client-Name", num)
+                .header("X-YouTube-Client-Version", version)
+                .header("Origin", "https://www.youtube.com")
+                .header("X-Origin", "https://www.youtube.com")
+                .header(reqwest::header::USER_AGENT, ua)
+                .header("Cookie", cookie)
+                .header("Authorization", &auth)
+                .header("X-Goog-AuthUser", "0");
+            if !visitor.is_empty() {
+                req = req.header("X-Goog-Visitor-Id", &visitor);
+            }
+            let resp: serde_json::Value = match req.json(&body).send().await.and_then(|r| r.error_for_status()) {
+                Ok(r) => r.json().await?,
+                Err(e) => { errors.push(format!("{name} {version}: {e}")); continue; }
+            };
+            let status = resp["playabilityStatus"]["status"].as_str().unwrap_or("");
+            if status != "OK" {
+                errors.push(format!("{name} {version}: {status}: {}", resp["playabilityStatus"]["reason"].as_str().unwrap_or("")));
+                continue;
+            }
+            match self.pick_signed(&resp, codec, &player).await {
+                Ok(s) => return Ok(s),
+                Err(e) => errors.push(format!("{name}: {e:#}")),
+            }
+        }
+        Err(anyhow!("{}", errors.join(" | ")))
+    }
+
+    /// Best audio format of a signed player response, with its URL deciphered.
+    async fn pick_signed(&self, resp: &serde_json::Value, codec: Codec, player: &crate::jsplayer::Player) -> Result<StreamInfo> {
+        let formats = resp["streamingData"]["adaptiveFormats"].as_array().ok_or_else(|| anyhow!("no formats"))?;
+        let audio = formats.iter().filter(|f| {
+            f["mimeType"].as_str().is_some_and(|m| m.starts_with("audio/"))
+                && (f["url"].is_string() || f["signatureCipher"].is_string())
+                && f["drmFamilies"].is_null()
+                && f["audioTrack"]["audioIsDefault"].as_bool().unwrap_or(true)
+        });
+        let bitrate = |f: &&serde_json::Value| f["bitrate"].as_u64().unwrap_or(0);
+        let best = audio
+            .clone()
+            .filter(|f| f["mimeType"].as_str().is_some_and(|m| m.starts_with(codec.mime_prefix())))
+            .max_by_key(bitrate)
+            .or_else(|| audio.max_by_key(bitrate))
+            .ok_or_else(|| anyhow!("no audio stream"))?;
+        // Plain URL, or a cipher: url + s (encrypted signature) + sp (its query name).
+        let (base, sig, sp) = match best["url"].as_str() {
+            Some(u) => (u.to_string(), None, String::new()),
+            None => {
+                let mut url = String::new();
+                let mut s = None;
+                let mut sp = "signature".to_string();
+                for (k, v) in url::form_urlencoded::parse(best["signatureCipher"].as_str().unwrap_or("").as_bytes()) {
+                    match k.as_ref() {
+                        "url" => url = v.into_owned(),
+                        "s" => s = Some(v.into_owned()),
+                        "sp" => sp = v.into_owned(),
+                        _ => {}
+                    }
+                }
+                (url, s, sp)
+            }
+        };
+        let mut u = url::Url::parse(&base)?;
+        let n = u.query_pairs().find(|(k, _)| k == "n").map(|(_, v)| v.into_owned());
+        let (nm, sm) = self
+            .solver
+            .solve(player, &n.iter().cloned().collect::<Vec<_>>(), &sig.iter().cloned().collect::<Vec<_>>())
+            .await?;
+        let pairs: Vec<(String, String)> = u
+            .query_pairs()
+            .map(|(k, v)| {
+                let v = if k == "n" { nm.get(v.as_ref()).cloned().unwrap_or_else(|| v.into_owned()) } else { v.into_owned() };
+                (k.into_owned(), v)
+            })
+            .collect();
+        {
+            let mut q = u.query_pairs_mut();
+            q.clear();
+            for (k, v) in &pairs {
+                q.append_pair(k, v);
+            }
+            if let Some(s) = &sig {
+                q.append_pair(&sp, sm.get(s).ok_or_else(|| anyhow!("signature not solved"))?);
+            }
+        }
+        let url = u.to_string();
+        let mime_full = best["mimeType"].as_str().unwrap_or("audio/mp4");
+        let expires = Instant::now() + url_ttl(&url);
+        Ok(StreamInfo {
+            url,
+            mime: mime_full.split(';').next().unwrap_or("audio/mp4").to_string(),
+            codec: Codec::from_mime(mime_full),
+            kbps: best["averageBitrate"].as_u64().or_else(|| best["bitrate"].as_u64()).map(|b| (b / 1000) as u32),
+            size: best["contentLength"].as_str().and_then(|s| s.parse().ok()),
+            expires,
+        })
     }
 
     /// The pure-Rust resolvers: visionOS innertube and rustypipe race; first *verified* URL wins.
@@ -796,14 +948,55 @@ mod debug_user_session {
         }
         let pls: Vec<crate::models::PlaylistCard> =
             serde_json::from_str(&db.get_setting("remote_playlists").unwrap_or("[]".into())).unwrap();
-        for p in pls {
+        for p in pls.into_iter().take(0) {
             let t = std::time::Instant::now();
             let r = yt.playlist_any(&p.id, true).await;
             println!("playlist {:<12}: {} in {:?}", &p.id[..p.id.len().min(12)],
                 match &r { Ok(x) => format!("OK {} tracks", x.tracks.len()), Err(e) => format!("ERR {e:#}").chars().take(100).collect() },
                 t.elapsed());
         }
-        let r = yt.search("так похуй").await.unwrap();
+        // rustypipe can panic on a flaky visitor-id fetch; retry a few times
+        let mut r = None;
+        for _ in 0..5 {
+            use futures_util::FutureExt;
+            if let Ok(Ok(x)) = std::panic::AssertUnwindSafe(yt.search("так похуй")).catch_unwind().await { r = Some(x); break; }
+        }
+        let r = r.expect("search failed 5 times");
+        // Signed-in playback without yt-dlp (Android path): resolve, then probe the tail.
+        let at = std::time::Instant::now();
+        let p = yt.solver.player().await;
+        println!("player: {:?} in {:?}", p.as_ref().map(|p| (p.id.clone(), p.sts)).map_err(|e| format!("{e:#}")), at.elapsed());
+        for t in r.tracks.iter().take(3) {
+            let at = std::time::Instant::now();
+            match yt.stream_signed(&t.id, super::Codec::Aac, cookie.as_deref().unwrap()).await {
+                Ok(s) => {
+                    let total = s.size.unwrap_or(2_000_000);
+                    let probe = reqwest::Client::new().get(&s.url).header("Range", format!("bytes={}-{}", total.saturating_sub(4096), total - 1)).send().await;
+                    println!("signed {} [{}]: OK {} in {:?}, tail: {:?}", t.title, t.id, s.mime, at.elapsed(), probe.map(|r| r.status()));
+                }
+                Err(e) => println!("signed {} [{}]: ERR {}", t.title, t.id, format!("{e:#}").chars().take(400).collect::<String>()),
+            }
+        }
+        // Which client does yt-dlp use successfully? (verbose run; cookie file deleted right after)
+        if std::env::var("YTDLP_VERBOSE").is_ok() {
+            let c = cookie.as_deref().unwrap();
+            let file = std::env::temp_dir().join("ytm-ck-test.txt");
+            let mut txt = String::from("# Netscape HTTP Cookie File
+");
+            for kv in c.split(';').map(str::trim).filter(|s| !s.is_empty()) {
+                if let Some((k, v)) = kv.split_once('=') { txt.push_str(&format!(".youtube.com	TRUE	/	TRUE	2147483647	{k}	{v}
+")); }
+            }
+            std::fs::write(&file, txt).unwrap();
+            let out = std::process::Command::new(data.join("bin").join("yt-dlp.exe"))
+                .args(["-v", "-f", "bestaudio", "--get-url", "--no-playlist", "--cookies"]).arg(&file)
+                .arg(format!("https://music.youtube.com/watch?v={}", r.tracks[0].id)).output().unwrap();
+            let _ = std::fs::remove_file(&file);
+            for l in String::from_utf8_lossy(&out.stderr).lines().filter(|l| l.contains("player") || l.contains("client") || l.contains("WARNING") || l.contains("ERROR") || l.contains("sig") || l.contains("challenge")) {
+                println!("ytdlp: {}", l.chars().take(220).collect::<String>());
+            }
+            println!("ytdlp ok: {}", out.status.success());
+        }
         for t in r.tracks.iter().take(3) {
             let s = crate::ytdlp::get_url_signed_in(&data.join("bin"), &std::env::temp_dir(), &t.id, "bestaudio[ext=m4a]/bestaudio", cookie.as_deref().unwrap()).await;
             println!("stream {} [{}]: {}", t.title, t.id, match s { Ok(u) => format!("OK url len {}", u.len()), Err(e) => format!("ERR {e:#}").chars().take(300).collect() });

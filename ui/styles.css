@@ -732,3 +732,13 @@ body.paused .stage-art { transform: scale(.94); filter: saturate(.85); }
   .mix-card b { font-size: var(--fs-heading); }
   .page { gap: 32px; }
 }
+
+/* ------------------------------------------------------------ window frame */
+.win-ctrls { display: flex; gap: 2px; margin-left: var(--s2); }
+.win-btn { display: grid; place-items: center; width: 40px; height: 32px; border-radius: var(--r-xs); color: var(--muted); }
+.win-btn .ic { width: 16px; height: 16px; }
+.win-btn:hover { background: var(--surface-hover); color: var(--text); }
+.win-btn.close:hover { background: #e5173a; color: #fff; }
+body.frame-custom #topbar { padding-right: 10px; }
+body.frame-mac #topbar { padding-left: 84px; }
+[data-tauri-drag-region] { -webkit-user-select: none; user-select: none; }

@@ -6512,6 +6512,7 @@ dependencies = [
  "image",
  "keyring",
  "reqwest 0.12.28",
+ "rquickjs",
  "rquickjs-sys",
  "rusqlite",
  "rustypipe",

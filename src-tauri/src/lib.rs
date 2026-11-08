@@ -6,6 +6,7 @@ mod commands;
 mod db;
 mod downloads;
 mod integrations;
+mod jsplayer;
 mod lyrics;
 #[cfg(windows)]
 mod media;
@@ -82,6 +83,13 @@ pub fn run() {
                 });
             }
             app.manage(core);
+            jsplayer::attach(app.handle().clone());
+            // Our own title bar (ui: #topbar + window buttons) instead of the system frame.
+            // macOS keeps its traffic lights, overlaid on the bar (titleBarStyle: Overlay).
+            #[cfg(any(windows, target_os = "linux"))]
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.set_decorations(false);
+            }
             #[cfg(windows)]
             media::init(app.handle());
             #[cfg(desktop)]
@@ -110,6 +118,7 @@ pub fn run() {
             commands::stream_quality,
             commands::prefetch,
             commands::media_update,
+            jsplayer::js_solve_done,
             commands::liked_tracks,
             commands::liked_ids,
             commands::set_liked,

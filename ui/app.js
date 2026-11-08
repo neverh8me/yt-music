@@ -1130,6 +1130,47 @@ sInput.addEventListener('focus', () => {
 });
 $('#search-btn').onclick = focusSearch;
 
+// ---------------------------------------------------------------- stream challenge solver
+// Rust asks the webview's JS engine to run yt-dlp's solver (signed-in 18+ playback without
+// yt-dlp, e.g. on Android); a worker keeps it off the UI thread. See jsplayer.rs.
+{
+  let worker = null;
+  listen('js-solve', ({ id, input }) => {
+    if (!worker) {
+      worker = new Worker('solver-worker.js');
+      worker.onmessage = (e) => api.jsSolveDone(e.data.id, e.data.out).catch(() => {});
+      worker.onerror = () => { worker = null; };
+    }
+    worker.postMessage({ id, input });
+  });
+}
+
+// ---------------------------------------------------------------- window frame (desktop)
+// Windows/Linux: no system frame — our top bar drags the window and carries the buttons.
+// macOS: the system traffic lights sit on our bar, so the brand moves right.
+{
+  const tw = window.__TAURI__?.window?.getCurrentWindow?.();
+  const mobile = !!window.AndroidMedia || /Android|iPhone|iPad/.test(navigator.userAgent);
+  const mac = /Mac/.test(navigator.platform || navigator.userAgent);
+  if (tw && !mobile && mac) document.body.classList.add('frame-mac');
+  if (tw && !mobile && !mac) {
+    document.body.classList.add('frame-custom');
+    $('#win-ctrls').hidden = false;
+    $('#win-min').onclick = () => tw.minimize();
+    $('#win-max').onclick = () => tw.toggleMaximize();
+    $('#win-close').onclick = () => tw.close();
+    const sync = async () => {
+      const max = await tw.isMaximized().catch(() => false);
+      setIcon($('#win-max'), max ? 'win-restore' : 'win-max');
+      $('#win-max').title = t(max ? 'win.restore' : 'win.max');
+      $('#win-max').setAttribute('aria-label', $('#win-max').title);
+      document.body.classList.toggle('maximized', max);
+    };
+    sync();
+    window.addEventListener('resize', debounce(sync, 120));
+  }
+}
+
 // ---------------------------------------------------------------- stage + capsule
 const audio = player.audio;
 let sideMode = 'queue'; // 'queue' | 'lyrics'

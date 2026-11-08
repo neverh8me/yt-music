@@ -14,8 +14,8 @@
   <div id="ambient" aria-hidden="true"></div>
 
   <div id="app">
-    <header id="topbar">
-      <div class="brand">
+    <header id="topbar" data-tauri-drag-region>
+      <div class="brand" data-tauri-drag-region>
         <button class="iconbtn" id="nav-back" data-i18n-title="nav.back" hidden><i data-icon="chev-left"></i></button>
         <button class="home-btn" data-nav="home" data-i18n-title="nav.homeBtn">
           <span class="brand-mark" aria-hidden="true"><i data-icon="play"></i></span>
@@ -28,10 +28,15 @@
         <kbd class="kbd-hint">Ctrl K</kbd>
         <div id="suggest" class="suggest hidden"></div>
       </div>
-      <div class="top-right">
+      <div class="top-right" data-tauri-drag-region>
         <button class="iconbtn" id="search-btn" data-i18n-title="nav.search"><i data-icon="search"></i></button>
         <button class="pill-btn update-btn hidden" id="update-btn" data-act="install-update"></button>
         <button class="avatar" id="avatar" aria-haspopup="menu" aria-expanded="false"></button>
+        <div class="win-ctrls" id="win-ctrls" hidden>
+          <button class="win-btn" id="win-min" data-i18n-title="win.min"><i data-icon="win-min"></i></button>
+          <button class="win-btn" id="win-max" data-i18n-title="win.max"><i data-icon="win-max"></i></button>
+          <button class="win-btn close" id="win-close" data-i18n-title="win.close"><i data-icon="close"></i></button>
+        </div>
       </div>
     </header>
 

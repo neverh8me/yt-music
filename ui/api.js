@@ -23,6 +23,7 @@ export const api = {
   streamQuality: (id) => invoke('stream_quality', { id }),
   prefetch: (ids) => invoke('prefetch', { ids }),
   mediaUpdate: (np) => invoke('media_update', { np }),
+  jsSolveDone: (id, out) => invoke('js_solve_done', { id, out }),
 
   // Player (queue engine lives in Rust)
   playerState: () => invoke('player_state'),
