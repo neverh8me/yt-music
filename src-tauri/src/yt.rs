@@ -96,6 +96,12 @@ fn artists(a: &[ArtistId]) -> Vec<ArtistRef> {
         .collect()
 }
 
+/// Songs only: the app plays music, not music videos (or podcast episodes). Applied to what
+/// the app picks (search, charts, artist pages, radio), not to the user's own playlists.
+fn song(t: &TrackItem) -> bool {
+    t.track_type.is_track()
+}
+
 pub fn track(t: TrackItem) -> Track {
     Track {
         cover: best_thumb(&t.cover),
@@ -215,7 +221,7 @@ impl Yt {
         // Tracks are the critical part; other categories degrade gracefully.
         let tracks = tracks.context("track search failed")?;
         Ok(SearchResults {
-            tracks: tracks.items.items.into_iter().map(track).collect(),
+            tracks: tracks.items.items.into_iter().filter(song).map(track).collect(),
             albums: albums
                 .map(|r| r.items.items.into_iter().map(album).take(12).collect())
                 .unwrap_or_default(),
@@ -250,14 +256,14 @@ impl Yt {
             if !c.top_tracks.is_empty() {
                 sections.push(HomeSection {
                     title: "top_tracks".into(),
-                    tracks: c.top_tracks.into_iter().map(track).collect(),
+                    tracks: c.top_tracks.into_iter().filter(song).map(track).collect(),
                     ..Default::default()
                 });
             }
             if !c.trending_tracks.is_empty() {
                 sections.push(HomeSection {
                     title: "trending".into(),
-                    tracks: c.trending_tracks.into_iter().map(track).collect(),
+                    tracks: c.trending_tracks.into_iter().filter(song).map(track).collect(),
                     ..Default::default()
                 });
             }
@@ -323,7 +329,7 @@ impl Yt {
             cover: best_thumb(&a.header_image),
             subscribers: a.subscriber_count,
             description: a.description,
-            tracks: a.tracks.into_iter().map(track).collect(),
+            tracks: a.tracks.into_iter().filter(song).map(track).collect(),
             albums: albums.into_iter().map(album).collect(),
             singles: singles.into_iter().map(album).collect(),
             playlists: a.playlists.into_iter().map(playlist_card).collect(),
@@ -416,7 +422,7 @@ impl Yt {
         let qr = self.rp.query();
         let mut p = qr.music_radio_track(id).await?;
         p.extend_limit(&qr, 50).await.ok();
-        Ok(p.items.into_iter().map(track).collect())
+        Ok(p.items.into_iter().filter(song).map(track).collect())
     }
 
     pub async fn lyrics(&self, id: &str) -> Result<Option<LyricsOut>> {
