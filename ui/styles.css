@@ -859,5 +859,10 @@ body[data-mode="browse"]:not(.idle) #capvol { transform: none; opacity: 1; point
   body.searching .home-btn { gap: 0; }
 }
 
+/* older WebViews (before Chromium 105) have no container units: a square cover sized by the screen */
+@supports not (width: 1cqw) {
+  .stage-art { width: min(100%, 42vh, 560px); height: auto; aspect-ratio: 1; }
+}
+
 /* macOS full screen: no traffic lights, so no room kept for them */
 body.frame-mac.fullscreen #topbar { padding-left: var(--gutter); }
