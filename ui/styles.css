@@ -742,3 +742,12 @@ body.paused .stage-art { transform: scale(.94); filter: saturate(.85); }
 body.frame-custom #topbar { padding-right: 10px; }
 body.frame-mac #topbar { padding-left: 84px; }
 [data-tauri-drag-region] { -webkit-user-select: none; user-select: none; }
+/* phone: the same cover-coloured light as on desktop, scaled to a tall screen —
+   a wide glow over the (quiet) top part instead of a small corner spot */
+@media (max-width: 760px) {
+  #ambient {
+    background: radial-gradient(150% 62% at 30% -6%, color-mix(in srgb, var(--tint-a) 62%, transparent), transparent 72%),
+                radial-gradient(120% 45% at 80% 30%, color-mix(in srgb, var(--tint-a) 26%, transparent), transparent 70%);
+  }
+  body[data-mode="browse"] #ambient { opacity: .85; }
+}
