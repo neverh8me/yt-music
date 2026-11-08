@@ -48,8 +48,8 @@ jobs:
 
       # rquickjs-sys (via rustypipe) generates its iOS bindings with bindgen → Xcode's libclang.
       # Signing is switched off for every target through an xcconfig that xcodebuild always
-      # reads (XCODE_XCCONFIG_FILE); the archive then holds an unsigned .app. Exporting a
-      # signed .ipa fails without a team, which is expected: the .ipa is packed by hand below.
+      # reads (XCODE_XCCONFIG_FILE), with no team and manual (empty) signing, so Xcode doesn't
+      # look for an Apple account; the unsigned .app is packed into an .ipa by hand below.
       - name: Build (unsigned)
         working-directory: src-tauri
         run: |
@@ -61,12 +61,14 @@ jobs:
           CODE_SIGNING_REQUIRED = NO
           CODE_SIGN_IDENTITY =
           CODE_SIGN_ENTITLEMENTS =
+          CODE_SIGN_STYLE = Manual
+          PROVISIONING_PROFILE_SPECIFIER =
+          PROVISIONING_PROFILE =
           DEVELOPMENT_TEAM =
           EOF
           export XCODE_XCCONFIG_FILE="$RUNNER_TEMP/nosign.xcconfig"
-          export APPLE_DEVELOPMENT_TEAM=0000000000
           npx --yes @tauri-apps/cli@2 ios build --ci --target aarch64 2>&1 | tee "$RUNNER_TEMP/build.log" || true
-          APP="$(find gen/apple -path '*.xcarchive/Products/Applications/*.app' -type d -prune | head -1)"
+          APP="$(find gen/apple "$HOME/Library/Developer/Xcode/DerivedData" \( -path '*.xcarchive/Products/Applications/*.app' -o -path '*-iphoneos/*.app' \) -type d -prune 2>/dev/null | head -1)"
           if [ -z "$APP" ]; then
             echo "::error::no .app in the archive (see the build log above)"
             grep -nE "error:|error\[|failed" "$RUNNER_TEMP/build.log" | tail -40 || true
