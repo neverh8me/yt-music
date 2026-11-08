@@ -36,8 +36,8 @@ fn on_started(app: &AppHandle, core: &Arc<Core>, q: &Queue) {
     let Some(cur) = q.current() else { return };
     let _ = core.db.record_play(&cur.track);
     crate::integrations::notify_track(app, core, &cur.track);
-    // Pre-resolve the next stream URL so skipping is instant.
-    if let Some(next) = q.index.and_then(|i| q.items.get(i + 1)) {
+    // Pre-resolve the next two stream URLs so skipping is instant.
+    for next in q.index.map(|i| q.items.iter().skip(i + 1).take(2)).into_iter().flatten() {
         let (core, id) = (core.clone(), next.track.id.clone());
         tauri::async_runtime::spawn(async move {
             if core.db.download_path(&id).is_none() {

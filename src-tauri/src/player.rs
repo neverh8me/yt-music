@@ -295,7 +295,7 @@ mod tests {
 
     fn tracks(n: usize) -> Vec<Track> {
         (0..n)
-            .map(|i| Track { id: format!("t{i}"), title: format!("T{i}"), artists: vec![], album: None, duration: None, cover: None })
+            .map(|i| Track { id: format!("t{i}"), title: format!("T{i}"), artists: vec![], album: None, duration: None, cover: None, plays: None })
             .collect()
     }
     fn ids(q: &Queue) -> Vec<String> {

@@ -21,6 +21,7 @@ export const api = {
   lyrics: (track) => invoke('get_lyrics', { track }),
   coverColor: (url) => invoke('cover_color', { url }),
   streamQuality: (id) => invoke('stream_quality', { id }),
+  prefetch: (ids) => invoke('prefetch', { ids }),
 
   // Player (queue engine lives in Rust)
   playerState: () => invoke('player_state'),

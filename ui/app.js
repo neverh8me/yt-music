@@ -24,12 +24,8 @@ const kindLabel = (k) => (k ? t(`kind.${k}`) : '');
 const compact = (n) => new Intl.NumberFormat(locale(), { notation: 'compact', maximumFractionDigits: 1 }).format(n);
 const subsLabel = (n) => (n == null ? '' : t('subscribers', { n: compact(n) }));
 // Themes are token sets in styles.css: "glass" (default, PR #1 by @dopedasya) and "classic".
-const currentTheme = () => document.documentElement.dataset.theme || 'glass';
-function applyTheme(theme) {
-  if (theme !== 'classic') theme = 'glass';
-  try { localStorage.setItem('theme', theme); } catch { /* ignore */ }
-  document.documentElement.dataset.theme = theme;
-}
+const getPref = (k, d) => { try { return localStorage.getItem(k) || d; } catch { return d; } };
+function setPref(k, v) { try { localStorage.setItem(k, v); } catch { /* ignore */ } window.__applyTheme?.(); }
 const regionName = (code) => {
   try { return new Intl.DisplayNames([locale()], { type: 'region' }).of(code) || code; } catch { return code; }
 };
@@ -41,7 +37,7 @@ const artistNames = (artists = []) => artists.map((a) => a.name).join(', ');
 const errText = (e) => (typeof e === 'string' ? e : e?.message || JSON.stringify(e));
 const debounce = (fn, ms) => { let h; return (...a) => { clearTimeout(h); h = setTimeout(() => fn(...a), ms); }; };
 const isPhone = () => matchMedia('(max-width: 760px)').matches;
-const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const reducedMotion = () => document.documentElement.dataset.motion === 'reduce';
 
 function toast(msg, kind = '') {
   const el = document.createElement('div');
@@ -92,6 +88,7 @@ function setMode(m) {
   document.body.dataset.mode = m;
   $('#nav-back').hidden = m !== 'browse';
   if (m === 'browse') ensureBackEntry();
+  markRail();
 }
 function morph(to) {
   if (mode() === to) return;
@@ -149,7 +146,7 @@ window.addEventListener('popstate', () => {
 // ---------------------------------------------------------------- router (browse layer)
 const nav = { stack: [], pos: -1 };
 let renderToken = 0;
-const LAYERS = ['home', 'library', 'history', 'downloads'];
+const LAYERS = ['library', 'history', 'downloads'];
 const layerName = (v) => ({ home: t('layer.forYou'), library: t('nav.library'), history: t('lib.history'), downloads: t('lib.downloads') }[v]);
 
 function go(view, params = {}, push = true) {
@@ -173,7 +170,7 @@ async function render() {
   if (!entry) return;
   const token = ++renderToken;
   const el = $('#view');
-  $$('#dock-tabs .tab').forEach((b) => b.setAttribute('aria-selected', b.dataset.nav === entry.view));
+  markRail();
   el.innerHTML = skeleton();
   pageColor = null;
   try {
@@ -215,7 +212,7 @@ function trackRows(tracks, opts = {}) {
         ${opts.covers === false ? '' : `<img class="tcover" loading="lazy" src="${esc(x.cover || '')}" alt="" data-onerr="hide">`}
         <div class="ttext"><div class="ttitle">${esc(x.title)}</div><div class="tartist">${dlIcon}${opts.badges?.[x.id] ? `<span class="qbadge">${esc(opts.badges[x.id])}</span>` : ''}<span>${artistLinks(x.artists)}</span></div></div>
       </div>
-      ${opts.album === false ? '' : `<div class="talbum">${x.album ? `<a class="link" data-go="album" data-id="${esc(x.album.id)}">${esc(x.album.name)}</a>` : ''}</div>`}
+      ${opts.album === false ? '' : `<div class="talbum">${opts.plays && x.plays ? `<span class="plays">${esc(t('tr.plays', { n: compact(x.plays) }))}</span>` : x.album ? `<a class="link" data-go="album" data-id="${esc(x.album.id)}">${esc(x.album.name)}</a>` : ''}</div>`}
       <div class="tright">
         <button class="icon-btn like ${liked ? 'on' : ''}" data-act="like" aria-pressed="${liked}" title="${esc(t(liked ? 'menu.unlike' : 'tr.like'))}" aria-label="${esc(t(liked ? 'menu.unlike' : 'tr.like'))}">${icon(liked ? 'heart-fill' : 'heart')}</button>
         <span class="tdur">${x.duration ? fmt(x.duration) : ''}</span>
@@ -252,6 +249,10 @@ const specialCard = (navTo, cls, ic, title, sub) => `<div class="card" data-nav=
 
 const secHead = (title, label = '', right = '') => `<div class="sec-head"><div>${label ? `<div class="sec-label">${esc(label)}</div>` : ''}<h2>${esc(title)}</h2></div>${right}</div>`;
 
+const scrollBtns = () => `<div class="scroll-btns"><button class="iconbtn" data-act="scroll" data-dir="-1" aria-label="${esc(t('nav.back'))}">${icon('chev-left')}</button><button class="iconbtn" data-act="scroll" data-dir="1" aria-label="${esc(t('nav.forward'))}">${icon('chev-right')}</button></div>`;
+/** One horizontally scrolling row of cards. */
+const carousel = (title, items, kind) => !items?.length ? '' :
+  `<section class="shelf">${secHead(title, '', scrollBtns())}<div class="carousel-track scroller">${items.map((i) => card(kind, i)).join('')}</div></section>`;
 const shelf = (title, items, kind, label = '') => !items?.length ? '' :
   `<section class="shelf">${secHead(title, label)}<div class="grid">${items.map((i) => card(kind, i)).join('')}</div></section>`;
 
@@ -301,28 +302,54 @@ const views = {
     ]);
     const recent = [];
     const seen = new Set();
-    for (const x of hist) { if (!seen.has(x.id)) { seen.add(x.id); recent.push(x); } if (recent.length >= 8) break; }
+    for (const x of hist) { if (!seen.has(x.id)) { seen.add(x.id); recent.push(x); } if (recent.length >= 16) break; }
     homeRecent = recent;
+    const hour = new Date().getHours();
+    const greet = t(hour < 5 ? 'greet.night' : hour < 12 ? 'greet.morning' : hour < 18 ? 'greet.day' : 'greet.evening');
+    const name = state.settings.logged_in && state.settings.account_name ? `, ${state.settings.account_name.split(' ')[0]}` : '';
     const quick = [
       { nav: 'liked', title: t('lib.liked'), cls: 'liked-cover', ic: 'heart-fill' },
       ...state.playlists.slice(0, 5).map((p) => ({ go: 'local-playlist', id: p.id, title: p.name, cover: p.cover })),
     ];
+    const sections = home.sections || [];
+    const titleOf = (s) => t(`sec.${s.title}`, { name: s.param || '' });
+    // Personal sections (built in Rust from your history and likes) become big "mix" cards.
+    const PERSONAL = ['your_mix', 'more_like', 'your_artists', 'rediscover'];
+    const mixes = sections.filter((s) => PERSONAL.includes(s.title) && s.tracks?.length);
+    const MIX = ['#ff2e4d', '#5b8cff', '#9e73ff', '#ff8a3d', '#1f9d5a', '#e0457b'];
     let html = `<div class="page home">
-      <div class="actions" style="margin-top:0">
-        <button class="pill-btn primary big" data-act="play-liked" ${state.liked.size ? '' : 'disabled'}>${icon('play')}${esc(t('home.playLiked'))}</button>
-        ${recent.length ? `<button class="pill-btn big" data-act="radio-recent">${icon('radio')}${esc(t('home.startRadio'))}</button>` : ''}
-      </div>
-      <section class="shelf">${secHead(t('home.quick'))}
+      <div class="home-head"><h1>${esc(greet + name)}</h1>
+        <div class="actions">
+          <button class="pill-btn primary big" data-act="play-liked" ${state.liked.size ? '' : 'disabled'}>${icon('play')}${esc(t('home.playLiked'))}</button>
+          ${recent.length ? `<button class="pill-btn big" data-act="radio-recent">${icon('radio')}${esc(t('home.startRadio'))}</button>` : ''}
+        </div></div>
       <div class="quick">${quick.map((q) => `<div class="quick-item" ${q.nav ? `data-nav="${q.nav}"` : `data-go="${q.go}" data-id="${esc(q.id ?? '')}"`} tabindex="0">
         ${q.cover ? `<img src="${esc(q.cover)}" alt="">` : `<span class="qc ${q.cls || ''}">${icon(q.ic || 'music')}</span>`}
-        <span>${esc(q.title)}</span></div>`).join('')}</div></section>`;
-    if (recent.length) html += `<section class="shelf">${secHead(t('home.recent'))}${trackRows(recent, { album: false })}</section>`;
-    for (const s of home.sections || []) {
-      const title = t(`sec.${s.title}`, { name: s.param || '' });
-      if (s.tracks?.length) html += `<section class="shelf">${secHead(title)}${trackRows(s.tracks.slice(0, 10))}</section>`;
-      html += shelf(title, s.albums, 'album');
-      html += shelf(title, s.playlists, 'playlist');
-      html += shelf(title, s.artists, 'artist');
+        <span>${esc(q.title)}</span></div>`).join('')}</div>`;
+    if (mixes.length) {
+      html += `<section class="shelf">${secHead(t('home.madeForYou'))}<div class="mixes">${mixes.map((s, i) => {
+        const lid = registerList(s.tracks);
+        const cover = s.tracks.find((x) => x.cover)?.cover;
+        const artists = [...new Set(s.tracks.flatMap((x) => (x.artists || []).map((a) => a.name)))].slice(0, 3).join(', ');
+        return `<div class="mix-card" style="--mix:${MIX[i % MIX.length]}" data-act="play-list" data-list="${lid}" data-title="${esc(titleOf(s))}" tabindex="0" role="button">
+          ${cover ? `<img src="${esc(cover)}" alt="" data-onerr="remove">` : ''}<b>${esc(titleOf(s))}</b><small>${esc(artists)}</small></div>`;
+      }).join('')}</div></section>`;
+    }
+    // Quick picks: a swipeable grid of songs picked for you (first personal mix, else recent).
+    const picks = mixes[0]?.tracks || [];
+    if (picks.length) html += `<section class="shelf">${secHead(t('home.quick'), '', scrollBtns())}<div class="picks scroller">${trackRows(picks.slice(0, 20), { album: false })}</div></section>`;
+    if (recent.length) html += `<section class="shelf">${secHead(t('home.recent'), '', scrollBtns())}<div class="picks scroller">${trackRows(recent, { album: false })}</div></section>`;
+    for (const s of sections) {
+      if (mixes.includes(s)) continue;
+      const title = titleOf(s);
+      if (s.tracks?.length) {
+        html += s.title === 'top_tracks'
+          ? `<section class="shelf chart">${secHead(title, t('home.chartLabel'))}${trackRows(s.tracks.slice(0, 10), { album: false })}</section>`
+          : `<section class="shelf">${secHead(title, '', scrollBtns())}<div class="picks scroller">${trackRows(s.tracks.slice(0, 20), { album: false })}</div></section>`;
+      }
+      html += carousel(title, s.albums, 'album');
+      html += carousel(title, s.playlists, 'playlist');
+      html += carousel(title, s.artists, 'artist');
     }
     if (home.error) html += `<div class="note">${esc(t('home.recoFail', { e: home.error }))}</div>`;
     return html + '</div>';
@@ -371,17 +398,19 @@ const views = {
   async artist({ id }) {
     const a = await api.artist(id);
     pageTracks = a.tracks; pageCtx = { kind: 'artist', id, title: a.name }; pageColor = a.cover;
-    return `<div class="page artist">
-      <div class="artist-hero" style="${a.cover ? `--bg-img:url('${esc(a.cover)}')` : ''}">
+    const plays = a.tracks.reduce((s, x) => s + (x.plays || 0), 0);
+    // Full-bleed hero (edge to edge of the page area), then the page content.
+    return `<div class="artist-hero" style="${a.cover ? `--bg-img:url('${esc(a.cover)}')` : ''}"><div class="artist-hero-in">
         <div class="hero-kind">${esc(t('kind.artist'))}</div><h1>${esc(a.name)}</h1>
-        ${a.subscribers != null ? `<div class="hero-meta">${esc(subsLabel(a.subscribers))}</div>` : ''}
+        <div class="hero-meta">${[a.subscribers != null ? subsLabel(a.subscribers) : '', plays ? t('artist.topPlays', { n: compact(plays) }) : ''].filter(Boolean).map(esc).join(' · ')}</div>
         <div class="actions" style="margin-top:0">${playBtn('play-page')}${actBtn('radio-artist', 'radio', t('act.artistRadio'))}${actBtn('shuffle-page', 'shuffle', t('act.shuffle'))}</div>
-      </div>
-      ${a.tracks.length ? `<section class="shelf"><h2>${esc(t('artist.popular'))}</h2>${trackRows(a.tracks.slice(0, 10), { ctx: pageCtx })}</section>` : ''}
-      ${shelf(t('artist.albums'), a.albums, 'album')}
-      ${shelf(t('artist.singles'), a.singles, 'album')}
-      ${shelf(t('artist.playlists'), a.playlists, 'playlist')}
-      ${shelf(t('artist.similar'), a.similar, 'artist')}
+      </div></div>
+      <div class="page artist">
+      ${a.tracks.length ? `<section class="shelf"><h2>${esc(t('artist.popular'))}</h2>${trackRows(a.tracks.slice(0, 10), { ctx: pageCtx, plays: true })}</section>` : ''}
+      ${carousel(t('artist.albums'), a.albums, 'album')}
+      ${carousel(t('artist.singles'), a.singles, 'album')}
+      ${carousel(t('artist.playlists'), a.playlists, 'playlist')}
+      ${carousel(t('artist.similar'), a.similar, 'artist')}
       ${a.description ? `<section class="shelf"><h2>${esc(t('artist.about'))}</h2><p class="desc">${esc(a.description)}</p></section>` : ''}
     </div>`;
   },
@@ -466,8 +495,13 @@ const views = {
         </select></div>
         <h2 class="sub-h">${esc(t('set.theme'))}</h2>
         <div class="seg theme-seg" role="radiogroup">
-          ${['glass', 'classic'].map((th) => `<label class="seg-opt"><input type="radio" name="theme" value="${th}" ${currentTheme() === th ? 'checked' : ''}>
-            <b>${esc(t(`theme.${th}`))}</b><small>${esc(t(`theme.${th}Sub`))}</small></label>`).join('')}
+          ${['system', 'dark', 'light'].map((m) => `<label class="seg-opt"><input type="radio" name="themeMode" value="${m}" ${getPref('themeMode', 'system') === m ? 'checked' : ''}>
+            <b>${esc(t(`mode.${m}`))}</b><small>${esc(t(`mode.${m}Sub`))}</small></label>`).join('')}
+        </div>
+        <h2 class="sub-h">${esc(t('set.motion'))}</h2>
+        <div class="seg" role="radiogroup">
+          ${['on', 'system'].map((m) => `<label class="seg-opt"><input type="radio" name="motion" value="${m}" ${getPref('motion', 'on') === m ? 'checked' : ''}>
+            <b>${esc(t(`motion.${m}`))}</b><small>${esc(t(`motion.${m}Sub`))}</small></label>`).join('')}
         </div>
         <h2 class="sub-h">${esc(t('set.region'))}</h2>
         <p class="muted small">${esc(t('set.regionHint'))}</p>
@@ -536,7 +570,8 @@ const afterRender = {
   search({ q }) { if (q) $('#search-input').value = q; },
   settings() {
     $('#lang-select')?.addEventListener('change', (e) => setLang(e.target.value));
-    $$('input[name=theme]').forEach((r) => r.addEventListener('change', () => applyTheme(r.value)));
+    $$('input[name=themeMode]').forEach((r) => r.addEventListener('change', () => setPref('themeMode', r.value)));
+    $$('input[name=motion]').forEach((r) => r.addEventListener('change', () => setPref('motion', r.value)));
     $('#region-select')?.addEventListener('change', async (e) => {
       try { await api.setChartRegion(e.target.value); toast(t('toast.settingsSaved')); } catch (err) { toast(errText(err), 'err'); }
     });
@@ -559,13 +594,27 @@ const afterRender = {
 
 // ---------------------------------------------------------------- dock + account
 function renderDock() {
-  $('#dock-tabs').innerHTML = LAYERS.map((v) => `<button class="tab" role="tab" data-nav="${v}" aria-selected="false">${esc(layerName(v))}</button>`).join('');
-  const tiles = [
-    `<button class="tile" data-nav="liked"><span class="qc liked-cover">${icon('heart-fill')}</span><div><b>${esc(t('lib.liked'))}</b><small>${esc(tracksLabel(state.liked.size))}</small></div></button>`,
-    ...state.playlists.slice(0, 2).map((p) => `<button class="tile" data-go="local-playlist" data-id="${p.id}">${p.cover ? `<img src="${esc(p.cover)}" alt="">` : `<span class="qc">${icon('music')}</span>`}<div><b>${esc(p.name)}</b><small>${esc(t('lib.playlist'))} · ${esc(tracksLabel(p.count))}</small></div></button>`),
-    `<button class="tile" data-nav="downloads"><span class="qc dl-cover">${icon('download')}</span><div><b>${esc(t('lib.downloads'))}</b><small>${esc(tracksLabel(state.downloaded.size))}</small></div></button>`,
-  ];
-  $('#dock-shelf').innerHTML = `<div class="shelf-row">${tiles.slice(0, 4).join('')}</div>`;
+  // Library rail (wide screens): built-ins, your playlists, then YouTube playlists.
+  const item = (attrs, cover, title, sub) => `<button class="rail-item" ${attrs}>${cover}<div><b>${esc(title)}</b><small>${esc(sub)}</small></div></button>`;
+  $('#rail-list').innerHTML = [
+    item('data-nav="liked"', `<span class="qc liked-cover">${icon('heart-fill')}</span>`, t('lib.liked'), `${t('lib.playlist')} · ${tracksLabel(state.liked.size)}`),
+    item('data-nav="downloads"', `<span class="qc dl-cover">${icon('download')}</span>`, t('lib.downloads'), `${t('lib.offline')} · ${tracksLabel(state.downloaded.size)}`),
+    item('data-nav="history"', `<span class="qc hist-cover">${icon('history')}</span>`, t('lib.history'), t('lib.historySub')),
+    ...state.playlists.map((p) => item(`data-go="local-playlist" data-id="${p.id}"`, p.cover ? `<img src="${esc(p.cover)}" alt="" data-onerr="hide">` : `<span class="qc">${icon('music')}</span>`, p.name, `${t('lib.playlist')} · ${tracksLabel(p.count)}`)),
+    state.remotePlaylists.length ? `<div class="mono rail-sep">${esc(t('lib.yt'))}</div>` : '',
+    ...state.remotePlaylists.map((p) => item(`data-go="playlist" data-id="${esc(p.id)}"`, p.cover ? `<img src="${esc(p.cover)}" alt="" data-onerr="hide">` : `<span class="qc">${icon('music')}</span>`, p.title, p.author || t('lib.playlist'))),
+  ].join('');
+  markRail();
+}
+/** Highlight the rail entry of the page that is open. */
+function markRail() {
+  const e = mode() === 'browse' ? nav.stack[nav.pos] : null;
+  const top = e && (['library', 'history', 'downloads', 'liked', 'local-playlist', 'playlist'].includes(e.view) ? 'library' : e.view);
+  $$('.rail-link[data-nav], .dock-link[data-nav]').forEach((b) => b.classList.toggle('active', !!e && b.dataset.nav === top));
+  $$('.rail-item').forEach((b) => {
+    const on = !!e && (b.dataset.nav ? b.dataset.nav === e.view : b.dataset.go === e.view && String(b.dataset.id) === String(e.params.id));
+    b.classList.toggle('active', on);
+  });
 }
 
 function renderAccount() {
@@ -932,9 +981,18 @@ const actions = {
     try { await api.installYtdlp(); toast(t('toast.ytdlpOk')); } catch (e) { toast(errText(e), 'err'); }
     render();
   },
+  'play-list': (el) => {
+    const list = state.lists.get(el.dataset.list);
+    if (list?.length) player.playList(list, 0, { kind: 'mix', title: el.dataset.title });
+  },
+  scroll: (el) => {
+    const box = el.closest('.shelf')?.querySelector('.scroller');
+    if (box) box.scrollBy({ left: Number(el.dataset.dir) * box.clientWidth * 0.8, behavior: reducedMotion() ? 'auto' : 'smooth' });
+  },
   'open-eq': () => eqSheet(),
   'close-overlay': () => closeOverlays(),
   'to-stage': () => toStage(),
+  'to-browse': () => { if (!nav.stack.length) go('home'); else morph('browse'); },
   'focus-search': () => focusSearch(),
 };
 
@@ -986,6 +1044,14 @@ document.addEventListener('click', (e) => {
   if (chip) { doSearch(chip.dataset.search); return; }
   const q = e.target.closest('.qrow');
   if (q) player.jumpTo(Number(q.dataset.qidx));
+});
+let hoverT = null;
+document.addEventListener('pointerover', (e) => {
+  const row = e.target.closest('.trow, .qrow');
+  clearTimeout(hoverT);
+  if (!row) return;
+  const r = trackFromEl(row);
+  if (r?.track && !state.downloaded.has(r.track.id)) hoverT = setTimeout(() => api.prefetch([r.track.id]).catch(() => {}), 250);
 });
 // Keyboard: Enter on a focused row / card activates it like a click.
 document.addEventListener('keydown', (e) => {
@@ -1067,6 +1133,7 @@ const audio = player.audio;
 let sideMode = 'queue'; // 'queue' | 'lyrics'
 const ly = { id: null, lines: [], active: -2, userScrollAt: 0 };
 
+let lastShown = null;
 function updateNowPlaying() {
   const cur = player.current;
   document.body.classList.toggle('idle', !cur);
@@ -1078,6 +1145,7 @@ function updateNowPlaying() {
   }
   $('#stage-art').src = cur.cover || COVER_PLACEHOLDER;
   $('#cap-art').src = cur.cover || COVER_PLACEHOLDER;
+  if (lastShown !== cur.id) { lastShown = cur.id; for (const el of [$('.stage-art-wrap'), $('#stage-title'), $('#stage-artist')]) { el.classList.remove('swap'); void el.offsetWidth; el.classList.add('swap'); } }
   $('#stage-title').textContent = cur.title;
   $('#stage-artist').innerHTML = artistLinks(cur.artists) + (cur.album?.id ? ` · <a class="link" data-go="album" data-id="${esc(cur.album.id)}">${esc(cur.album.name)}</a>` : '');
   $('#stage-ctx').textContent = player.context?.title ? t('stage.from', { title: player.context.title }) : t('stage.now');
@@ -1138,7 +1206,12 @@ function updateTime() {
     s.style.setProperty('--p', `${f * 100}%`);
     s.setAttribute('aria-valuetext', `${fmt(c)} / ${fmt(dur)}`);
   }
-  $('#cap-progress').style.width = `${f * 100}%`;
+  if (!seeking) {
+    const cs = $('#cap-seek');
+    cs.value = Math.round(f * 1000);
+    cs.style.setProperty('--p', `${f * 100}%`);
+    cs.setAttribute('aria-valuetext', `${fmt(c)} / ${fmt(dur)}`);
+  }
   const cur = player.current;
   if (cur) $('#cap-sub').textContent = `${artistNames(cur.artists)} · ${fmt(c)} / ${fmt(dur)}`;
   if ('mediaSession' in navigator && isFinite(d) && d > 0) {
@@ -1152,8 +1225,8 @@ function updateVolume() {
   r.style.setProperty('--p', `${v * 100}%`);
   setIcon($('#btn-mute'), v === 0 ? 'volume-off' : 'volume');
 }
-{
-  const s = $('#seek');
+// Both the stage slider and the capsule's bottom edge seek.
+for (const s of [$('#seek'), $('#cap-seek')]) {
   s.addEventListener('input', () => {
     seeking = true;
     const f = s.value / 1000;
@@ -1161,6 +1234,9 @@ function updateVolume() {
     if (isFinite(audio.duration)) $('#t-cur').textContent = fmt(f * audio.duration);
   });
   s.addEventListener('change', () => { player.seek(s.value / 1000); seeking = false; });
+  s.addEventListener('pointerdown', (e) => e.stopPropagation());
+}
+{
   const v = $('#vol');
   v.addEventListener('input', () => player.setVolume(v.value / 100));
   v.addEventListener('wheel', (e) => { e.preventDefault(); player.setVolume(audio.volume - Math.sign(e.deltaY) * 0.05); }, { passive: false });
@@ -1169,24 +1245,28 @@ function updateVolume() {
 // Side panel: up next, or synced lyrics.
 async function renderSide() {
   const side = $('#side');
-  $('#np-lyrics').setAttribute('aria-pressed', sideMode === 'lyrics');
   const cur = player.current;
   if (!cur) { side.innerHTML = ''; return; }
+  const tabs = `<div class="side-tabs" role="tablist">${[['queue', t('stage.upNext')], ['lyrics', t('rp.lyrics')]].map(([k, l]) =>
+    `<button class="side-tab" role="tab" data-side="${k}" aria-selected="${sideMode === k}">${esc(l)}</button>`).join('')}</div>`;
   if (sideMode === 'queue') {
-    const n = Math.max(0, player.queue.length - player.index - 1);
-    side.innerHTML = `<div class="side-head"><h2>${esc(t('stage.upNext'))}</h2><span class="mono">${esc(t('stage.inQueue', { n }))}</span></div>${queueMarkupUpNext()}`;
+    const ctx = player.context?.title ? `<div class="mono">${esc(t('rp.nextFrom', { title: player.context.title }))}</div>` : '';
+    side.innerHTML = `${tabs}<div class="side-body">${ctx}${queueMarkupUpNext()}</div>`;
     return;
   }
-  if (ly.id === cur.id) { side.innerHTML = lyricsHead() + ly.html; syncLyrics(true); return; }
-  side.innerHTML = `${lyricsHead()}<p class="ly-empty">${esc(t('lyrics.loading'))}</p>`;
+  if (ly.id === cur.id) { side.innerHTML = `${tabs}<div class="side-body">${ly.html}</div>`; syncLyrics(true); return; }
+  side.innerHTML = `${tabs}<div class="side-body"><p class="ly-empty">${esc(t('lyrics.loading'))}</p></div>`;
   const l = await api.lyrics(cur).catch(() => null);
   if (player.current?.id !== cur.id || sideMode !== 'lyrics') return;
   ly.id = cur.id; ly.lines = l?.synced || []; ly.active = -2;
   ly.html = lyricsMarkup(l);
-  side.innerHTML = lyricsHead() + ly.html;
+  side.innerHTML = `${tabs}<div class="side-body">${ly.html}</div>`;
   syncLyrics(true);
 }
-const lyricsHead = () => `<div class="side-head"><h2>${esc(t('rp.lyrics'))}</h2></div>`;
+document.addEventListener('click', (e) => {
+  const tab = e.target.closest('.side-tab');
+  if (tab) { sideMode = tab.dataset.side; renderSide(); }
+});
 function queueMarkupUpNext() {
   const q = player.queue, i = player.index;
   const up = q.slice(i + 1, i + 51);
@@ -1216,11 +1296,14 @@ function syncLyrics(force = false) {
   if (idx === ly.active && !force) return;
   ly.active = idx;
   $$('.ly-line').forEach((el, i) => { el.classList.toggle('active', i === idx); el.classList.toggle('past', i < idx); });
-  const el = $(`.ly-line[data-i="${idx}"]`), box = $('.ly-lines');
-  if (el && box && Date.now() - ly.userScrollAt > 3000) box.scrollTo({ top: el.offsetTop - box.clientHeight * 0.35, behavior: force ? 'auto' : 'smooth' });
+  const el = $(`.ly-line[data-i="${idx}"]`), box = $('.side-body');
+  if (el && box && Date.now() - ly.userScrollAt > 3000) {
+    const top = box.scrollTop + el.getBoundingClientRect().top - box.getBoundingClientRect().top - box.clientHeight * 0.35;
+    box.scrollTo({ top, behavior: force ? 'auto' : 'smooth' });
+  }
 }
-document.addEventListener('wheel', (e) => { if (e.target.closest('.ly-lines')) ly.userScrollAt = Date.now(); }, { passive: true });
-document.addEventListener('touchmove', (e) => { if (e.target.closest('.ly-lines')) ly.userScrollAt = Date.now(); }, { passive: true });
+document.addEventListener('wheel', (e) => { if (e.target.closest('.side-body')) ly.userScrollAt = Date.now(); }, { passive: true });
+document.addEventListener('touchmove', (e) => { if (e.target.closest('.side-body')) ly.userScrollAt = Date.now(); }, { passive: true });
 
 $('#btn-play').onclick = $('#cap-play').onclick = () => player.toggle();
 $('#btn-next').onclick = $('#cap-next').onclick = () => player.next();
@@ -1230,7 +1313,6 @@ $('#btn-repeat').onclick = () => player.cycleRepeat();
 $('#btn-mute').onclick = () => player.toggleMute();
 $('#np-like').onclick = $('#cap-like').onclick = () => player.current && toggleLike(player.current);
 $('#np-radio').onclick = () => startRadio(player.current);
-$('#np-lyrics').onclick = () => { sideMode = sideMode === 'lyrics' ? 'queue' : 'lyrics'; renderSide(); };
 $('#cap-lyrics').onclick = () => { sideMode = 'lyrics'; renderSide(); toStage(); };
 $('#cap-queue').onclick = () => queueSheet();
 $('#cap-open').onclick = $('#cap-expand').onclick = () => toStage();
@@ -1442,7 +1524,7 @@ listen('google-login-closed', () => { if (nav.stack[nav.pos]?.view === 'settings
   updateState();
   renderSide();
   // Something to play → the stage; otherwise open "For you".
-  if (!player.current) go('home');
+  go('home');
   api.sleepState().then(showSleep).catch(() => {});
   // Signed in before account info existed (or the avatar changed): fetch it once per start.
   if (state.settings.logged_in) {

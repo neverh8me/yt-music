@@ -7,16 +7,20 @@
   <link rel="stylesheet" href="styles.css">
   <script src="theme-boot.js"></script>
 </head>
-<body data-mode="stage">
-  <!-- Stage layout: the playing track is home ("stage"). Library, search and pages open as
-       layers over it, and the stage collapses into the capsule player, which never leaves. -->
+<body data-mode="browse" class="idle">
+  <!-- Layout: library sidebar (#rail) + pages (#main) + the capsule player at the bottom.
+       The capsule expands into the full-screen player (#stage): big cover, controls, and
+       "Up next" / "Lyrics" beside it. -->
   <div id="ambient" aria-hidden="true"></div>
 
   <div id="app">
     <header id="topbar">
       <div class="brand">
         <button class="iconbtn" id="nav-back" data-i18n-title="nav.back" hidden><i data-icon="chev-left"></i></button>
-        <b class="brand-name">YT Music</b>
+        <button class="home-btn" data-nav="home" data-i18n-title="nav.homeBtn">
+          <span class="brand-mark" aria-hidden="true"><i data-icon="home"></i></span>
+          <span class="brand-text"><b class="brand-name">YT Music</b><small class="brand-sub">powered by Rust 🦀</small></span>
+        </button>
       </div>
       <div class="search-wrap">
         <i data-icon="search"></i>
@@ -31,12 +35,22 @@
       </div>
     </header>
 
-    <main id="stage">
-      <div class="stage-idle">
-        <h1 data-i18n="stage.idle"></h1>
-        <p class="muted" data-i18n="stage.idleSub"></p>
-        <button class="pill-btn primary big" data-nav="home" data-i18n="stage.browse"></button>
+    <!-- Your library, always at hand on wide screens (playlists like a sidebar). -->
+    <aside id="rail">
+      <nav class="rail-nav">
+        <button class="rail-link" data-nav="home"><i data-icon="home"></i><span data-i18n="nav.homeBtn"></span></button>
+        <button class="rail-link" data-act="focus-search"><i data-icon="search"></i><span data-i18n="nav.search"></span></button>
+        <button class="rail-link" data-nav="library"><i data-icon="library"></i><span data-i18n="nav.library"></span></button>
+      </nav>
+      <div class="rail-head">
+        <b data-i18n="rail.yours"></b>
+        <button class="iconbtn" data-act="new-playlist" data-i18n-title="nav.newPlaylist"><i data-icon="plus"></i></button>
       </div>
+      <nav class="rail-list" id="rail-list"></nav>
+    </aside>
+
+    <main id="stage">
+      <button class="iconbtn stage-close" data-act="to-browse" data-i18n-title="stage.collapse"><i data-icon="chev-down"></i></button>
       <section class="now">
         <div class="stage-art-wrap"><img id="stage-art" class="stage-art" alt="" draggable="false"></div>
         <div class="now-meta">
@@ -47,7 +61,6 @@
             <button class="chip" id="np-like" aria-pressed="false"><i data-icon="heart"></i><span></span></button>
             <button class="chip" id="np-add"><i data-icon="plus"></i><span data-i18n="chip.add"></span></button>
             <button class="chip" id="np-radio"><i data-icon="radio"></i><span data-i18n="chip.radio"></span></button>
-            <button class="chip" id="np-lyrics" aria-pressed="false"><i data-icon="mic"></i><span data-i18n="rp.lyrics"></span></button>
             <span id="np-quality" class="qpill"></span>
           </div>
           <div class="seek">
@@ -72,10 +85,11 @@
       <aside class="side" id="side"></aside>
     </main>
 
+    <!-- Phone: bottom navigation -->
     <nav id="dock">
-      <div class="handle" aria-hidden="true"></div>
-      <div class="tabs" id="dock-tabs"></div>
-      <div class="shelf" id="dock-shelf"></div>
+      <button class="dock-link" data-nav="home"><i data-icon="home"></i><span data-i18n="nav.homeBtn"></span></button>
+      <button class="dock-link" data-act="focus-search"><i data-icon="search"></i><span data-i18n="nav.search"></span></button>
+      <button class="dock-link" data-nav="library"><i data-icon="library"></i><span data-i18n="nav.library"></span></button>
     </nav>
 
     <section id="main"><div id="view"></div></section>
@@ -89,10 +103,10 @@
       <button class="tbtn" id="cap-next" data-i18n-title="pl.next"><i data-icon="next"></i></button>
       <span class="cap-div wide" aria-hidden="true"></span>
       <button class="tbtn minor wide" id="cap-queue" data-i18n-title="pl.queue"><i data-icon="queue"></i></button>
-      <button class="tbtn minor wide" id="cap-lyrics" data-i18n-title="pl.lyrics"><i data-icon="mic"></i></button>
+      <button class="tbtn minor" id="cap-lyrics" data-i18n-title="pl.lyrics"><i data-icon="mic"></i></button>
       <button class="tbtn minor wide" data-act="open-eq" data-i18n-title="eq.title"><i data-icon="sliders"></i></button>
       <button class="tbtn minor wide" id="cap-expand" data-i18n-title="cap.expand"><i data-icon="chev-up"></i></button>
-      <div id="cap-progress" aria-hidden="true"></div>
+      <input id="cap-seek" type="range" min="0" max="1000" value="0" step="1" data-i18n-aria="pl.position">
     </section>
   </div>
 

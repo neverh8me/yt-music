@@ -152,6 +152,7 @@ mod tests {
             album: None,
             duration: None,
             cover: None,
+            plays: None,
         }
     }
 

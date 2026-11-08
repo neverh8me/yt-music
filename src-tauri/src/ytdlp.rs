@@ -34,6 +34,10 @@ fn cmd(bin: &Path) -> Command {
     c
 }
 
+/// Only the audio URL is needed: skip HLS/DASH manifests and subtitle translations,
+/// and fail fast on a dead connection instead of hanging.
+const FAST: [&str; 4] = ["--extractor-args", "youtube:skip=hls,dash,translated_subs", "--socket-timeout", "10"];
+
 fn watch_url(id: &str) -> String {
     format!("https://music.youtube.com/watch?v={id}")
 }
@@ -42,6 +46,7 @@ pub async fn get_url(dir: &Path, id: &str, format: &str) -> Result<String> {
     let bin = find(dir).ok_or_else(|| anyhow!("yt-dlp is not installed"))?;
     let out = cmd(&bin)
         .args(["-f", format, "--get-url", "--no-playlist", "--no-warnings"])
+        .args(FAST)
         .arg(watch_url(id))
         .output()
         .await?;
@@ -78,7 +83,7 @@ pub async fn get_url_signed_in(dir: &Path, tmp_dir: &Path, id: &str, format: &st
         std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600))?;
     }
     let mut c = cmd(&bin);
-    c.args(["-f", format, "--get-url", "--no-playlist", "--no-warnings", "--cookies"]).arg(&file);
+    c.args(["-f", format, "--get-url", "--no-playlist", "--no-warnings"]).args(FAST).arg("--cookies").arg(&file);
     // yt-dlp needs a JS runtime for YouTube's web clients; use Node if installed.
     if let Some(node) = which_node() {
         c.arg("--js-runtimes").arg(format!("node:{}", node.display()));

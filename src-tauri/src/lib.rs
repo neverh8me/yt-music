@@ -101,6 +101,7 @@ pub fn run() {
             commands::get_lyrics,
             commands::cover_color,
             commands::stream_quality,
+            commands::prefetch,
             commands::liked_tracks,
             commands::liked_ids,
             commands::set_liked,

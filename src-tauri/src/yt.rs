@@ -66,6 +66,10 @@ pub struct Yt {
     /// Second handle on the encrypted session cache, to read the cookie for account info.
     session: crate::secure_store::SecureStorage,
     pub ytdlp_dir: PathBuf,
+    /// At most a few yt-dlp processes at once (prefetches must not starve the track you clicked).
+    ytdlp_slots: tokio::sync::Semaphore,
+    /// One resolve per track id at a time; a second caller waits and reuses the cached URL.
+    inflight: Mutex<HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,
 }
 
 // ------------------------------------------------------------------ conversions
@@ -96,6 +100,7 @@ pub fn track(t: TrackItem) -> Track {
         artists: artists(&t.artists),
         album: t.album.map(|a| AlbumRef { id: a.id, name: a.name }),
         duration: t.duration,
+        plays: t.view_count,
         title: t.name,
         id: t.id,
     }
@@ -182,7 +187,16 @@ impl Yt {
         }
         let rp = b.build()?;
         let http = reqwest::Client::builder().timeout(Duration::from_secs(10)).build()?;
-        Ok(Self { rp, http, streams: Mutex::new(HashMap::new()), visitor: Mutex::new(None), session, ytdlp_dir })
+        Ok(Self {
+            rp,
+            http,
+            streams: Mutex::new(HashMap::new()),
+            visitor: Mutex::new(None),
+            session,
+            ytdlp_dir,
+            ytdlp_slots: tokio::sync::Semaphore::new(3),
+            inflight: Mutex::new(HashMap::new()),
+        })
     }
 
     pub async fn search(&self, q: &str) -> Result<SearchResults> {
@@ -356,6 +370,7 @@ impl Yt {
                         .unwrap_or_default(),
                     album: None,
                     duration: v.duration,
+                    plays: v.view_count,
                     title: v.name,
                     id: v.id,
                 })
@@ -460,17 +475,46 @@ impl Yt {
         self.streams.lock().unwrap().retain(|(k, _), _| k != id);
     }
 
+    fn cached(&self, key: &(String, Codec)) -> Option<StreamInfo> {
+        self.streams.lock().unwrap().get(key).filter(|s| s.expires > Instant::now()).cloned()
+    }
+
     /// Resolve an audio URL in the requested codec (falls back to whatever exists),
     /// cached until shortly before it expires.
     ///
-    /// The visionOS innertube call and rustypipe race; the first *verified* URL wins.
+    /// Desktop: every track goes through yt-dlp, the one path that plays everything
+    /// (18+ songs included, signed in), so there is no switching between methods.
+    /// The next tracks are resolved ahead of time, so skipping doesn't wait.
+    /// Android (no yt-dlp): the pure-Rust resolvers.
     pub async fn stream(&self, id: &str, codec: Codec) -> Result<StreamInfo> {
         let key = (id.to_string(), codec);
-        if let Some(s) = self.streams.lock().unwrap().get(&key)
-            && s.expires > Instant::now()
-        {
-            return Ok(s.clone());
+        if let Some(s) = self.cached(&key) {
+            return Ok(s);
         }
+        let lock = self.inflight.lock().unwrap().entry(id.to_string()).or_default().clone();
+        let _guard = lock.lock().await;
+        if let Some(s) = self.cached(&key) {
+            return Ok(s);
+        }
+        let resolved = if cfg!(desktop) && ytdlp::find(&self.ytdlp_dir).is_some() {
+            match self.stream_ytdlp(id, codec).await {
+                Ok(s) => s,
+                Err(e) => {
+                    // Only if yt-dlp itself is broken (e.g. mid-update): keep the music going.
+                    eprintln!("yt-dlp failed for {id}: {e:#}; using the built-in client");
+                    self.stream_native_race(id, codec).await.context("couldn't get an audio stream")?
+                }
+            }
+        } else {
+            self.stream_native_race(id, codec).await.context("couldn't get an audio stream")?
+        };
+        self.streams.lock().unwrap().insert(key, resolved.clone());
+        self.inflight.lock().unwrap().remove(id);
+        Ok(resolved)
+    }
+
+    /// The pure-Rust resolvers: visionOS innertube and rustypipe race; first *verified* URL wins.
+    async fn stream_native_race(&self, id: &str, codec: Codec) -> Result<StreamInfo> {
         type Fut<'a> = Pin<Box<dyn Future<Output = Result<StreamInfo>> + Send + 'a>>;
         // Pure-Rust resolvers first (~0.1 s); yt-dlp (~3 s, desktop only) is the safety net
         // for when YouTube breaks them and yt-dlp has already caught up.
@@ -483,16 +527,7 @@ impl Yt {
             }
         };
         let native: Vec<Fut> = vec![Box::pin(self.stream_native(id, codec)), Box::pin(rp_guarded)];
-        let resolved = match futures_util::future::select_ok(native).await {
-            Ok((s, _rest)) => s,
-            Err(e) if cfg!(desktop) => {
-                eprintln!("native stream resolvers failed for {id}: {e:#}; trying yt-dlp");
-                self.stream_ytdlp(id, codec).await.context("couldn't get an audio stream")?
-            }
-            Err(e) => return Err(e.context("couldn't get an audio stream")),
-        };
-        self.streams.lock().unwrap().insert(key, resolved.clone());
-        Ok(resolved)
+        Ok(futures_util::future::select_ok(native).await?.0)
     }
 
     async fn stream_rustypipe(&self, id: &str, codec: Codec) -> Result<StreamInfo> {
@@ -644,6 +679,7 @@ impl Yt {
     /// yt-dlp fallback. Signed in when a session exists: that's what makes age-restricted
     /// (18+) songs play, which YouTube only serves to signed-in, age-verified accounts.
     async fn stream_ytdlp(&self, id: &str, codec: Codec) -> Result<StreamInfo> {
+        let _slot = self.ytdlp_slots.acquire().await?;
         let url = match self.session_cookie() {
             Some(cookie) => {
                 let tmp = self.ytdlp_dir.parent().map(|p| p.join("tmp")).unwrap_or_else(std::env::temp_dir);
@@ -664,9 +700,19 @@ impl Yt {
             kbps: None,
             mime: mime.into(),
             size: None,
-            expires: Instant::now() + Duration::from_secs(3 * 3600),
+            expires: Instant::now() + url_ttl(&url),
         })
     }
+}
+
+/// How long a googlevideo URL stays valid: its `expire=` timestamp minus a safety margin.
+fn url_ttl(url: &str) -> Duration {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+    url.split(['?', '&'])
+        .find_map(|p| p.strip_prefix("expire="))
+        .and_then(|v| v.parse::<u64>().ok())
+        .map(|exp| Duration::from_secs(exp.saturating_sub(now).saturating_sub(600).max(300)))
+        .unwrap_or(Duration::from_secs(3 * 3600))
 }
 
 #[cfg(test)]

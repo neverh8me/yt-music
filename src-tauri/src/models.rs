@@ -22,6 +22,9 @@ pub struct Track {
     pub album: Option<AlbumRef>,
     pub duration: Option<u32>,
     pub cover: Option<String>,
+    /// Play count (YouTube views), when YouTube reports it (artist pages, charts).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plays: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

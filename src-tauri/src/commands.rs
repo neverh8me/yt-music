@@ -190,6 +190,20 @@ mod tests {
     }
 }
 
+/// Resolve stream URLs in the background (e.g. the track under the pointer), so a click plays at once.
+#[tauri::command]
+pub fn prefetch(core: St, ids: Vec<String>) {
+    let ok = |id: &String| id.len() <= 32 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    for id in ids.into_iter().filter(ok).take(3) {
+        let core = core.inner().clone();
+        tauri::async_runtime::spawn(async move {
+            if core.db.download_path(&id).is_none() {
+                let _ = core.yt.stream(&id, Codec::Aac).await;
+            }
+        });
+    }
+}
+
 /// Quality of what is (about to be) played: the offline file, or the AAC stream.
 #[tauri::command]
 pub async fn stream_quality(core: St<'_>, id: String) -> Res<StreamQuality> {
