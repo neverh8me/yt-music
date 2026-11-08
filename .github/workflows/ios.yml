@@ -46,6 +46,20 @@ jobs:
         working-directory: src-tauri
         run: npx --yes @tauri-apps/cli@2 ios init --ci
 
+      # No Apple account in CI: switch code signing off in the generated project itself
+      # (tauri's xcodebuild call doesn't pass an XCODE_XCCONFIG_FILE through).
+      - name: Disable code signing
+        working-directory: src-tauri/gen/apple
+        run: |
+          PBX="$(ls -d *.xcodeproj)/project.pbxproj"
+          sed -i '' \
+            -e 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' \
+            -e 's/DEVELOPMENT_TEAM = [^;]*;/DEVELOPMENT_TEAM = "";/g' \
+            -e 's/buildSettings = {/buildSettings = { CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; CODE_SIGN_IDENTITY = ""; CODE_SIGN_ENTITLEMENTS = ""; PROVISIONING_PROFILE_SPECIFIER = "";/g' \
+            "$PBX"
+          grep -c "CODE_SIGNING_ALLOWED = NO" "$PBX"
+          grep -n "CODE_SIGN_STYLE\|DEVELOPMENT_TEAM" "$PBX" | head
+
       # rquickjs-sys (via rustypipe) generates its iOS bindings with bindgen → Xcode's libclang.
       # Signing is switched off for every target through an xcconfig that xcodebuild always
       # reads (XCODE_XCCONFIG_FILE), with no team and manual (empty) signing, so Xcode doesn't
