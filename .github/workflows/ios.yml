@@ -44,7 +44,9 @@ jobs:
       # The Xcode project isn't committed yet; generate it.
       - name: Generate the Xcode project
         working-directory: src-tauri
-        run: npx --yes @tauri-apps/cli@2 ios init --ci
+        # through `cargo tauri` (the shim): the project then calls `cargo tauri` to build the Rust
+        # part too (with npx it would call `npm run tauri`, and there is no package.json).
+        run: cargo tauri ios init --ci
 
       # No Apple account in CI: switch code signing off in the generated project itself
       # (tauri's xcodebuild call doesn't pass an XCODE_XCCONFIG_FILE through).
@@ -81,7 +83,7 @@ jobs:
           DEVELOPMENT_TEAM =
           EOF
           export XCODE_XCCONFIG_FILE="$RUNNER_TEMP/nosign.xcconfig"
-          npx --yes @tauri-apps/cli@2 ios build --ci --target aarch64 2>&1 | tee "$RUNNER_TEMP/build.log" || true
+          cargo tauri ios build --ci --target aarch64 2>&1 | tee "$RUNNER_TEMP/build.log" || true
           APP="$(find gen/apple "$HOME/Library/Developer/Xcode/DerivedData" \( -path '*.xcarchive/Products/Applications/*.app' -o -path '*-iphoneos/*.app' \) -type d -prune 2>/dev/null | head -1)"
           if [ -z "$APP" ]; then
             echo "::error::no .app in the archive (see the build log above)"
@@ -89,6 +91,12 @@ jobs:
             exit 1
           fi
           echo "App: $APP"
+          # a failed build can leave an empty .app behind: require the executable
+          if [ -z "$(find "$APP" -maxdepth 1 -type f -perm -u+x -size +1M)" ]; then
+            echo "::error::the .app has no executable (build failed)"
+            grep -nE "error:|error[|failed" "$RUNNER_TEMP/build.log" | tail -40 || true
+            exit 1
+          fi
           VERSION="$(node -p "require('./tauri.conf.json').version")"
           mkdir -p "$RUNNER_TEMP/ipa/Payload"
           cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/"
