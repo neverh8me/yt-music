@@ -1,14 +1,16 @@
-# YT Music
+<p align="center"><img src="src-tauri/icons/128x128@2x.png" alt="YT Music" width="96"></p>
 
-**English** · [Українська](README.uk.md) · [Русский](README.ru.md)
+<h1 align="center">YT Music</h1>
 
-A fast, unofficial YouTube Music desktop client written in Rust (Tauri 2). Search, stream, build a library, and download music for offline listening, with an interface inspired by the big streaming apps.
+<p align="center"><b>English</b> · <a href="README.uk.md">Українська</a> · <a href="README.ru.md">Русский</a></p>
+
+A fast, unofficial YouTube Music client for Windows, macOS, Linux and Android, written in Rust (Tauri 2). Search, stream, build your library and download music for offline listening — including 18+ songs on your own account.
 
 > Unofficial project. Not affiliated with, endorsed by, or sponsored by Google LLC. YouTube and YouTube Music are trademarks of Google LLC.
 
 ![Home: mixes made for you, quick picks, your playlists in the sidebar](docs/screenshots/home.png)
 
-| Player with synced lyrics | Phone layout |
+| Player with synced lyrics | Phone |
 |---|---|
 | ![Player with synced lyrics](docs/screenshots/lyrics.png) | <img src="docs/screenshots/mobile.png" alt="Phone layout" width="300"> |
 
@@ -22,27 +24,42 @@ A fast, unofficial YouTube Music desktop client written in Rust (Tauri 2). Searc
 
 ## Features
 
-- Search songs, albums, artists and playlists, with suggestions as you type
-- Album, artist and playlist pages
-- Player with queue, shuffle, repeat (all / one), seeking, volume and media keys
-- Autoplay: when the queue runs out, similar songs (radio) are added
-- Time-synced lyrics (Spotify-style: the current line lights up, click a line to jump), from [LRCLIB](https://lrclib.net) with YouTube Music lyrics as fallback
-- Pages tinted with the cover's colour (computed in Rust)
-- Library: liked songs, your own playlists and history, stored locally in SQLite
-- Offline downloads in high quality (Opus ~160 kbps, or AAC ~128 kbps), stored encrypted in our own `.ytmc` format like Spotify's offline cache, so they play only inside the app
-- Sign in with Google to import your YouTube Music likes and playlists
-- One-click updates: desktop downloads the new installer, verifies its signature and restarts; Android downloads the new APK
-- Interface in English, Ukrainian and Russian; two themes: **Classic** and **Glass** (design by [@dopedasya](https://github.com/dopedasya))
-- Small and fast: ~14 MB binary, a song starts in ~0.2 s
+**Listening**
+- Home made for you: mixes from your history and likes, quick picks, top songs chart, new releases, recently played
+- Search songs, albums, artists and playlists with suggestions; album, artist (with play counts) and playlist pages
+- Songs only: music videos are left out of search, charts, artist pages and radio
+- A player that expands from the bottom bar to full screen: big cover, controls, and *Up next* / *Lyrics* right beside it
+- Queue, shuffle, repeat (all / one), seeking from the bar, volume, sleep timer, media keys
+- Autoplay: when the queue runs out, similar songs (radio) keep playing
+- Time-synced lyrics (the current line lights up, click a line to jump), from [LRCLIB](https://lrclib.net) with YouTube Music lyrics as fallback
+- 10-band equalizer with presets
+- 18+ songs play when you're signed in (age-verified account)
+
+**Library**
+- Sidebar with your library and playlists, always at hand
+- Liked songs, your own playlists and history, stored locally in SQLite
+- Sign in with Google to bring your YouTube likes and playlists; account menu on your avatar (sync, switch account, sign out)
+- Offline downloads (high or standard quality), stored encrypted in the app's own `.ytmc` format, so they play only inside YT Music
+
+**App**
+- Glass design (by [@dopedasya](https://github.com/dopedasya)) in dark, light or system mode, with the cover's colour as ambient light
+- Own title bar on Windows/Linux; shows up as "YT Music" in the Windows media overlay
+- English, Ukrainian and Russian
+- One-click updates: desktop installs a signed update and restarts; Android downloads the new APK
 
 ## Install
 
-Grab the installer for your platform from [Releases](../../releases).
+Grab the file for your platform from [Releases](../../releases). Each release lists what changed.
 
-- **Windows**: `YT.Music_x.y.z_Windows-x64-setup.exe`
-- **macOS**: `*_macOS-Apple-Silicon.dmg` (M1/M2/M3/M4) or `*_macOS-Intel.dmg`. The app isn't notarized, so on first launch right-click it and choose **Open**.
-- **Linux**: `*_Linux-x64.deb` (Debian/Ubuntu)
-- **Android**: `*_Android.apk` (allow installing from unknown sources)
+| Platform | File |
+|---|---|
+| Windows | `*_Windows-x64-setup.exe` |
+| macOS, Apple Silicon (M1/M2/M3/M4) | `*_macOS-Apple-Silicon.dmg` |
+| macOS, Intel | `*_macOS-Intel.dmg` |
+| Linux (Debian/Ubuntu) | `*_Linux-x64.deb` |
+| Android | `*_Android.apk` (allow installing from unknown sources) |
+
+macOS builds aren't notarized: on first launch right-click the app and choose **Open**.
 
 ## Build from source
 
@@ -59,29 +76,33 @@ The frontend is plain HTML/CSS/JS in `ui/`, so no Node.js or bundler is needed.
 
 ## How it works
 
-Most of the app is Rust; the web layer only renders and plays `<audio>`.
+The logic is Rust; the web layer renders the interface and plays `<audio>`.
 
 ```
-ui/                 frontend (no build step): app.js, player.js (thin), api.js, i18n.js, icons.js
+ui/                 interface (no build step): app.js, player.js, api.js, eq.js, i18n.js, icons.js,
+                    solver-worker.js + ejs/ (stream challenge solver, see below)
 src-tauri/src/
   lib.rs            startup, command registration (desktop + Android entry point)
   player.rs         queue engine: shuffle, repeat, autoplay radio, persistence
-  playback.rs       player commands; records history, prefetches the next stream
+  playback.rs       player commands; history, prefetching the next streams
   yt.rs             YouTube Music metadata (rustypipe) + audio stream resolution
-  lyrics.rs         LRCLIB lookup, fuzzy matching, LRC parsing
-  color.rs          dominant cover colour for page tints
+  ytdlp.rs          yt-dlp (desktop): installed and updated automatically, checksum-verified
+  jsplayer.rs       solves YouTube's stream challenges without yt-dlp (Android)
+  server.rs         local 127.0.0.1 server for <audio> (Range/seeking, decrypts offline files)
   vault.rs          encrypted offline container (.ytmc, ChaCha20, seekable)
   downloads.rs      chunked downloads straight into the vault
-  server.rs         local 127.0.0.1 HTTP server for <audio> (Range/seeking, decrypts offline files)
-  auth.rs           "Sign in with Google" window
+  lyrics.rs         LRCLIB lookup, fuzzy matching, LRC parsing
+  recommend.rs      "made for you" mixes from your history and likes
+  color.rs          dominant cover colour for tints
+  auth.rs / account.rs   "Sign in with Google", account name and avatar
+  media.rs          Windows media overlay (system media controls)
   db.rs             SQLite: likes, playlists, history, downloads, cache, settings
-  ytdlp.rs          optional yt-dlp fallback (desktop only, checksum-verified)
 ```
 
-- **Metadata** (search, albums, artists, radio, lyrics, account) comes from [rustypipe](https://codeberg.org/ThetaDev/rustypipe).
-- **Audio URLs** come from a direct InnerTube `player` request with the visionOS client, which needs no JS player and no PO token. This resolver races rustypipe, and the first verified URL wins. On desktop, [yt-dlp](https://github.com/yt-dlp/yt-dlp) is a last-resort fallback; it is installed on first run and updated automatically.
-- googlevideo rejects open-ended ranges, so the local proxy fetches upstream in bounded 4 MB chunks and stitches them into one stream for the player. Seeking works, and stream URLs never reach the web layer.
-- The next song in the queue is resolved in advance, so skipping is instant.
+- **Metadata** (search, albums, artists, charts, radio, account) comes from [rustypipe](https://codeberg.org/ThetaDev/rustypipe).
+- **Audio on desktop:** every song goes through [yt-dlp](https://github.com/yt-dlp/yt-dlp), signed in with your session when you're logged in, so 18+ songs play too. At most 3 yt-dlp processes run at once, the same song is never resolved twice in parallel, URLs are cached until they expire, and the next two songs (and the one under your pointer) are resolved in advance, so skipping doesn't wait.
+- **Audio on Android** (no yt-dlp): a direct InnerTube `player` request with the visionOS client races rustypipe. For 18+ songs the app makes a signed request and solves the stream URL challenges with yt-dlp's own solver ([yt-dlp/ejs](https://github.com/yt-dlp/ejs), Unlicense) running in the webview's JS engine; the parsed player is cached on disk.
+- googlevideo rejects open-ended ranges, so the local proxy fetches upstream in bounded 4 MB chunks and stitches them into one stream. Seeking works, and stream URLs never reach the web layer.
 
 ## Tests
 
@@ -100,8 +121,9 @@ cargo test -- --ignored --nocapture   # live tests against real YouTube
 | Ctrl+↑ / Ctrl+↓ | Volume |
 | Ctrl+K or / | Search |
 | Alt+L | Like current song |
+| Esc | Close the player or a menu |
 | Alt+← | Back |
 
 ## License
 
-[GPL-3.0](LICENSE). The project depends on rustypipe, which is GPL-3.0, so the app as a whole is distributed under the same license.
+[GPL-3.0](LICENSE). The project depends on rustypipe, which is GPL-3.0, so the app as a whole is distributed under the same license. The vendored stream challenge solver (`ui/ejs`) is from yt-dlp/ejs (Unlicense).
