@@ -693,6 +693,7 @@ impl Yt {
             }
             None => ytdlp::get_url(&self.ytdlp_dir, id, codec.ytdlp_format()).await?,
         };
+        let expires = Instant::now() + url_ttl(&url);
         let mime = if url.contains("mime=audio%2Fwebm") { "audio/webm" } else { "audio/mp4" };
         Ok(StreamInfo {
             url,
@@ -700,7 +701,7 @@ impl Yt {
             kbps: None,
             mime: mime.into(),
             size: None,
-            expires: Instant::now() + url_ttl(&url),
+            expires,
         })
     }
 }
