@@ -721,3 +721,14 @@ body.paused .stage-art { transform: scale(.94); filter: saturate(.85); }
 .brand-text { align-items: flex-start; }
 .brand-mark { width: 32px; height: 32px; border-radius: 9px; }
 .brand-mark .ic { width: 14px; height: 14px; margin-left: 2px; }
+/* phone: denser home — quick access in two columns, smaller mix cards */
+@media (max-width: 760px) {
+  .quick { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); }
+  .quick-item { padding: 6px; gap: var(--s2); font-size: var(--fs-caption); }
+  .quick-item img, .quick-item .qc { width: 44px; height: 44px; }
+  .home-head .actions .pill-btn.big { height: 40px; padding: 0 16px; }
+  .mixes { grid-auto-columns: 62%; }
+  .mix-card { padding: var(--s4); }
+  .mix-card b { font-size: var(--fs-heading); }
+  .page { gap: 32px; }
+}

@@ -91,10 +91,10 @@ pub fn update(app: &AppHandle, np: Option<NowPlaying>) {
                 return;
             };
             let _ = controls.set_metadata(MediaMetadata {
-                title: Some(&np.title),
-                artist: Some(&np.artist),
-                album: Some(&np.album).filter(|a| !a.is_empty()),
-                cover_url: Some(&np.cover).filter(|u| u.starts_with("https://")),
+                title: Some(np.title.as_str()),
+                artist: Some(np.artist.as_str()),
+                album: Some(np.album.as_str()).filter(|a| !a.is_empty()),
+                cover_url: Some(np.cover.as_str()).filter(|u| u.starts_with("https://")),
                 duration: Some(Duration::from_millis(np.duration_ms)).filter(|d| !d.is_zero()),
             });
             let progress = Some(MediaPosition(Duration::from_millis(np.position_ms)));
