@@ -53,6 +53,8 @@ pub fn run() {
             let default_download_dir = data_dir.join("offline");
 
             let db = db::Db::open(&data_dir.join("library.db"))?;
+            // cached pages (commands::page) live a week
+            let _ = db.cache_prune(commands::PAGE_PREFIX, 7 * 24 * 3600 * 1000);
             let session_key = secrets::get_or_create(&data_dir, "session", None)?;
             let yt = yt::Yt::new(data_dir.join("rustypipe"), data_dir.join("bin"), &session_key)?;
             let http = reqwest::Client::builder()

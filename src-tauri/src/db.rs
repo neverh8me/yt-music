@@ -317,6 +317,15 @@ impl Db {
         Ok(())
     }
 
+    /// Drop cached entries whose key starts with `prefix` and that are older than `max_age_ms`.
+    pub fn cache_prune(&self, prefix: &str, max_age_ms: i64) -> Result<()> {
+        self.c().execute(
+            "DELETE FROM cache WHERE substr(key, 1, length(?1)) = ?1 AND ts < ?2",
+            params![prefix, now() - max_age_ms],
+        )?;
+        Ok(())
+    }
+
     pub fn download_path(&self, id: &str) -> Option<String> {
         self.c()
             .query_row("SELECT path FROM downloads WHERE track_id = ?1", [id], |r| r.get(0))

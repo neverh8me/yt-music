@@ -11,6 +11,14 @@ use tauri::{AppHandle, Emitter, Manager, State, Url, WebviewUrl, WebviewWindowBu
 
 const LABEL: &str = "google-login";
 const START: &str = "https://accounts.google.com/ServiceLogin?service=youtube&passive=true&continue=https%3A%2F%2Fmusic.youtube.com%2F";
+/// YouTube's own sign-in hand-off (what its "Sign in" button does): after Google, youtube.com/signin
+/// sets the YouTube session cookies, then goes on to YouTube Music. WebKit (macOS, Linux) doesn't
+/// always get the YouTube cookies from the shorter START redirect, so it starts here and, if the
+/// page still arrives signed out, retries once (Google's own session is there by then).
+#[cfg(not(windows))]
+const YT_SIGNIN: &str = "https://accounts.google.com/ServiceLogin?service=youtube&uilel=3&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26app%3Ddesktop%26next%3Dhttps%253A%252F%252Fmusic.youtube.com%252F";
+#[cfg(not(windows))]
+static RETRIED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// A regular desktop browser UA: Google refuses sign-in in "embedded" browsers it can detect.
 /// Must stay identical to `additionalBrowserArgs` of the main window in tauri.conf.json.
 #[cfg(windows)]
@@ -115,6 +123,21 @@ async fn capture(app: AppHandle, core: Arc<Core>) {
     POLLING.store(false, Ordering::SeqCst);
 }
 
+/// WebKit: the page reached YouTube Music but without a session → run YouTube's sign-in
+/// hand-off once more (Google is signed in by now, so it passes straight through).
+#[cfg(not(windows))]
+async fn retry_signin(app: AppHandle) {
+    use std::sync::atomic::Ordering;
+    tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+    let signed_in = youtube_cookies(&app).await.map(|c| c.iter().any(|(n, _)| n == "SAPISID" || n == "__Secure-3PAPISID"));
+    if signed_in != Ok(false) || RETRIED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    if let (Some(w), Ok(url)) = (app.get_webview_window(LABEL), Url::parse(YT_SIGNIN)) {
+        let _ = w.navigate(url);
+    }
+}
+
 #[tauri::command]
 pub async fn google_login(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<(), String> {
     if let Some(w) = app.get_webview_window(LABEL) {
@@ -124,7 +147,14 @@ pub async fn google_login(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<
     let core = core.inner().clone();
     let poll_core = core.clone();
     let handler_app = app.clone();
+    #[cfg(windows)]
     let url = Url::parse(START).map_err(|e| e.to_string())?;
+    #[cfg(not(windows))]
+    let url = {
+        RETRIED.store(false, std::sync::atomic::Ordering::SeqCst);
+        let _ = START;
+        Url::parse(YT_SIGNIN).map_err(|e| e.to_string())?
+    };
     let builder = WebviewWindowBuilder::new(&app, LABEL, WebviewUrl::External(url));
     // WebView2 shares one browser process per data folder; every window must use the same
     // browser arguments as the main window (tauri.conf.json), or creation fails with
@@ -143,6 +173,8 @@ pub async fn google_login(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<
             let host = payload.url().host_str().unwrap_or("");
             if payload.event() == PageLoadEvent::Finished && host == "music.youtube.com" {
                 tauri::async_runtime::spawn(capture(handler_app.clone(), core.clone()));
+                #[cfg(not(windows))]
+                tauri::async_runtime::spawn(retry_signin(handler_app.clone()));
             }
         })
         .build()

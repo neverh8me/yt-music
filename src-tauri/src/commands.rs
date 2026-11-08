@@ -21,8 +21,9 @@ pub fn stream_base(core: St) -> String {
 
 // ------------------------------------------------------------- YouTube Music
 #[tauri::command]
-pub async fn search(core: St<'_>, query: String) -> Res<SearchResults> {
-    core.yt.search(&query).await.map_err(e)
+pub async fn search(core: St<'_>, query: String) -> Res<serde_json::Value> {
+    let key = format!("search:{}", query.trim().to_lowercase());
+    page(core.inner(), key, 10 * MIN, move |c| async move { c.yt.search(&query).await }).await
 }
 
 #[tauri::command]
@@ -34,14 +35,61 @@ pub async fn search_suggestions(core: St<'_>, query: String) -> Res<Vec<String>>
 pub async fn home(core: St<'_>) -> Res<Home> {
     // "Made for you" first (from your history/likes), then charts for your region.
     let region = effective_region(&core);
-    let (personal, general) = tokio::join!(crate::recommend::personal(&core), core.yt.home(&region));
+    let general = page(core.inner(), format!("home:{region}"), 60 * MIN, move |c| async move { c.yt.home(&region).await });
+    let (personal, general) = tokio::join!(crate::recommend::personal(&core), general);
     let mut sections = personal;
-    match general {
+    match general.and_then(|v| serde_json::from_value::<Home>(v).map_err(e)) {
         Ok(h) => sections.extend(h.sections),
-        Err(err) if sections.is_empty() => return Err(e(err)),
+        Err(err) if sections.is_empty() => return Err(err),
         Err(_) => {}
     }
     Ok(Home { sections })
+}
+
+// ------------------------------------------------------------- page cache
+/// Prefix of cached page keys in the DB cache table (pruned after a week, see lib.rs).
+pub const PAGE_PREFIX: &str = "page:";
+const MIN: i64 = 60 * 1000;
+
+/// Pages from YouTube (albums, artists, playlists, charts, search) are kept in the DB, so
+/// opening one you've seen before is instant: a fresh copy is returned as is, a stale one
+/// is returned right away and refreshed in the background for next time. Only a page
+/// never opened before (or not opened for a week) waits for the network.
+async fn page<T, F, Fut>(core: &Arc<Core>, key: String, fresh_ms: i64, fetch: F) -> Res<serde_json::Value>
+where
+    T: serde::Serialize,
+    F: FnOnce(Arc<Core>) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = anyhow::Result<T>> + Send + 'static,
+{
+    fn store(core: &Core, key: &str, v: &serde_json::Value) {
+        let entry = serde_json::json!({ "ts": crate::db::now(), "v": v });
+        let _ = core.db.cache_put(key, &entry.to_string());
+    }
+    let key = format!("{PAGE_PREFIX}{key}");
+    let old = core
+        .db
+        .cache_get(&key)
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|mut o| Some((o["ts"].as_i64()?, o.get_mut("v")?.take())));
+    match old {
+        Some((ts, v)) if crate::db::now() - ts < fresh_ms => Ok(v),
+        Some((_, v)) => {
+            let c = core.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Ok(new) = fetch(c.clone()).await
+                    && let Ok(new) = serde_json::to_value(new)
+                {
+                    store(&c, &key, &new);
+                }
+            });
+            Ok(v)
+        }
+        None => {
+            let v = serde_json::to_value(fetch(core.clone()).await.map_err(e)?).map_err(e)?;
+            store(core, &key, &v);
+            Ok(v)
+        }
+    }
 }
 
 /// Stored setting: "auto" (default) or a country code.
@@ -94,19 +142,19 @@ pub fn set_chart_region(core: St, region: String) -> Res<()> {
 }
 
 #[tauri::command]
-pub async fn get_album(core: St<'_>, id: String) -> Res<AlbumPage> {
-    core.yt.album(&id).await.map_err(e)
+pub async fn get_album(core: St<'_>, id: String) -> Res<serde_json::Value> {
+    page(core.inner(), format!("album:{id}"), 6 * 60 * MIN, move |c| async move { c.yt.album(&id).await }).await
 }
 
 #[tauri::command]
-pub async fn get_artist(core: St<'_>, id: String) -> Res<ArtistPage> {
-    core.yt.artist(&id).await.map_err(e)
+pub async fn get_artist(core: St<'_>, id: String) -> Res<serde_json::Value> {
+    page(core.inner(), format!("artist:{id}"), 60 * MIN, move |c| async move { c.yt.artist(&id).await }).await
 }
 
 #[tauri::command]
-pub async fn get_playlist(core: St<'_>, id: String) -> Res<PlaylistPage> {
+pub async fn get_playlist(core: St<'_>, id: String) -> Res<serde_json::Value> {
     let logged_in = core.db.get_setting("logged_in").is_some();
-    core.yt.playlist_any(&id, logged_in).await.map_err(e)
+    page(core.inner(), format!("playlist:{id}"), 10 * MIN, move |c| async move { c.yt.playlist_any(&id, logged_in).await }).await
 }
 
 #[tauri::command]

@@ -37,6 +37,10 @@ const artistNames = (artists = []) => artists.map((a) => a.name).join(', ');
 const errText = (e) => (typeof e === 'string' ? e : e?.message || JSON.stringify(e));
 const debounce = (fn, ms) => { let h; return (...a) => { clearTimeout(h); h = setTimeout(() => fn(...a), ms); }; };
 const isPhone = () => matchMedia('(max-width: 760px)').matches;
+/** The player alone on screen (narrow window, phone): Up next / Lyrics open as a sheet over it. */
+const stageCompact = () => matchMedia('(max-width: 1199px)').matches;
+/** googleusercontent covers come at 544 px; list rows only need a small one (less to load and decode). */
+const thumb = (url, px = 120) => (url && /googleusercontent\.com|ggpht\.com/.test(url) ? url.replace(/=w\d+-h\d+[^/]*$/, `=w${px}-h${px}-l90-rj`) : url || '');
 const reducedMotion = () => document.documentElement.dataset.motion === 'reduce';
 
 function toast(msg, kind = '') {
@@ -92,7 +96,7 @@ function setMode(m) {
 }
 function morph(to) {
   if (mode() === to) return;
-  const fromImg = to === 'browse' ? $('.stage-art-wrap') : $('#cap-art');
+  const fromImg = to === 'browse' ? $('#stage-art') : $('#cap-art');
   const r1 = fromImg.getBoundingClientRect();
   setMode(to);
   const src = player.current?.cover;
@@ -101,16 +105,17 @@ function morph(to) {
   if (to === 'browse') {
     // The capsule is still sliding in; use its resting place.
     const cap = $('#capsule'), app = $('#app').getBoundingClientRect(), art = $('#cap-art');
-    const left = app.left + cap.offsetLeft - cap.offsetWidth / 2 + art.offsetLeft;
+    const left = app.left + cap.offsetLeft + art.offsetLeft;
     r2 = { left, top: app.top + cap.offsetTop + art.offsetTop, width: art.offsetWidth, height: art.offsetHeight };
   } else {
-    r2 = $('.stage-art-wrap').getBoundingClientRect();
+    r2 = $('#stage-art').getBoundingClientRect();
   }
   const g = document.createElement('img');
   g.className = 'ghost-art';
   g.src = src;
   Object.assign(g.style, { left: `${r1.left}px`, top: `${r1.top}px`, width: `${r1.width}px`, height: `${r1.height}px` });
   document.body.appendChild(g);
+  if (to === 'browse') closeSide();
   const hide = to === 'browse' ? $('#cap-art') : $('.stage-art-wrap');
   hide.style.visibility = 'hidden';
   const s = r2.width / r1.width;
@@ -137,6 +142,7 @@ function ensureBackEntry() {
 window.addEventListener('popstate', () => {
   backArmed = false;
   if (closeOverlays()) { if (mode() === 'browse') ensureBackEntry(); return; }
+  if (closeSide()) return;
   if (mode() === 'browse') {
     if (nav.pos > 0) { nav.pos--; render(); ensureBackEntry(); }
     else toStage();
@@ -171,10 +177,11 @@ async function render() {
   const token = ++renderToken;
   const el = $('#view');
   markRail();
-  el.innerHTML = skeleton();
+  const sk = setTimeout(() => { if (token === renderToken) el.innerHTML = skeleton(); }, 120);
   pageColor = null;
   try {
     const html = await (views[entry.view] || views.home)(entry.params);
+    clearTimeout(sk);
     if (token !== renderToken) return;
     // The four layers share a tab bar at the top.
     el.innerHTML = (LAYERS.includes(entry.view) ? `<div class="page layer-head">${layerBar(entry.view)}</div>` : '') + html;
@@ -182,6 +189,7 @@ async function render() {
     applyPageColor(token);
     afterRender[entry.view]?.(entry.params);
   } catch (e) {
+    clearTimeout(sk);
     if (token !== renderToken) return;
     console.error(e);
     el.innerHTML = `<div class="page"><div class="empty">${icon('music')}<h2>${esc(t('err.title'))}</h2><p>${esc(errText(e))}</p>
@@ -209,7 +217,7 @@ function trackRows(tracks, opts = {}) {
     return `<div class="trow ${playing ? 'playing' : ''} ${playing && !player.playing ? 'paused' : ''}" data-list="${lid}" data-idx="${i}" data-tid="${esc(x.id)}" tabindex="0">
       <div class="tnum"><span class="n">${opts.numbers === false ? '' : i + 1}</span><span class="eq"><b></b><b></b><b></b></span>${icon('play', 'pl')}</div>
       <div class="tmain">
-        ${opts.covers === false ? '' : `<img class="tcover" loading="lazy" src="${esc(x.cover || '')}" alt="" data-onerr="hide">`}
+        ${opts.covers === false ? '' : `<img class="tcover" loading="lazy" decoding="async" src="${esc(thumb(x.cover))}" alt="" data-onerr="hide">`}
         <div class="ttext"><div class="ttitle">${esc(x.title)}</div><div class="tartist">${dlIcon}${opts.badges?.[x.id] ? `<span class="qbadge">${esc(opts.badges[x.id])}</span>` : ''}<span>${artistLinks(x.artists)}</span></div></div>
       </div>
       ${opts.album === false ? '' : `<div class="talbum">${opts.plays && x.plays ? `<span class="plays">${esc(t('tr.plays', { n: compact(x.plays) }))}</span>` : x.album ? `<a class="link" data-go="album" data-id="${esc(x.album.id)}">${esc(x.album.name)}</a>` : ''}</div>`}
@@ -233,7 +241,7 @@ function card(kind, item) {
   if (kind === 'artist') sub = item.subscribers != null ? subsLabel(item.subscribers) : t('kind.artist');
   if (kind === 'local') sub = tracksLabel(item.count || 0);
   const cover = item.cover
-    ? `<img loading="lazy" src="${esc(item.cover)}" alt="" data-onerr="remove">`
+    ? `<img loading="lazy" decoding="async" src="${esc(thumb(item.cover, 360))}" alt="" data-onerr="remove">`
     : `<div class="ph">${icon(kind === 'artist' ? 'user' : 'music')}</div>`;
   return `<div class="card" data-go="${kind === 'local' ? 'local-playlist' : kind}" data-id="${esc(item.id)}" tabindex="0">
     <div class="card-art ${round ? 'round' : ''}">${cover}
@@ -324,7 +332,7 @@ const views = {
           ${recent.length ? `<button class="pill-btn big" data-act="radio-recent">${icon('radio')}${esc(t('home.startRadio'))}</button>` : ''}
         </div></div>
       <div class="quick">${quick.map((q) => `<div class="quick-item" ${q.nav ? `data-nav="${q.nav}"` : `data-go="${q.go}" data-id="${esc(q.id ?? '')}"`} tabindex="0">
-        ${q.cover ? `<img src="${esc(q.cover)}" alt="">` : `<span class="qc ${q.cls || ''}">${icon(q.ic || 'music')}</span>`}
+        ${q.cover ? `<img src="${esc(thumb(q.cover))}" alt="">` : `<span class="qc ${q.cls || ''}">${icon(q.ic || 'music')}</span>`}
         <span>${esc(q.title)}</span></div>`).join('')}</div>`;
     if (mixes.length) {
       html += `<section class="shelf">${secHead(t('home.madeForYou'))}<div class="mixes">${mixes.map((s, i) => {
@@ -595,14 +603,14 @@ const afterRender = {
 // ---------------------------------------------------------------- dock + account
 function renderDock() {
   // Library rail (wide screens): built-ins, your playlists, then YouTube playlists.
-  const item = (attrs, cover, title, sub) => `<button class="rail-item" ${attrs}>${cover}<div><b>${esc(title)}</b><small>${esc(sub)}</small></div></button>`;
+  const item = (attrs, cover, title, sub) => `<button class="rail-item" ${attrs} title="${esc(title)}">${cover}<div><b>${esc(title)}</b><small>${esc(sub)}</small></div></button>`;
   $('#rail-list').innerHTML = [
     item('data-nav="liked"', `<span class="qc liked-cover">${icon('heart-fill')}</span>`, t('lib.liked'), `${t('lib.playlist')} · ${tracksLabel(state.liked.size)}`),
     item('data-nav="downloads"', `<span class="qc dl-cover">${icon('download')}</span>`, t('lib.downloads'), `${t('lib.offline')} · ${tracksLabel(state.downloaded.size)}`),
     item('data-nav="history"', `<span class="qc hist-cover">${icon('history')}</span>`, t('lib.history'), t('lib.historySub')),
-    ...state.playlists.map((p) => item(`data-go="local-playlist" data-id="${p.id}"`, p.cover ? `<img src="${esc(p.cover)}" alt="" data-onerr="hide">` : `<span class="qc">${icon('music')}</span>`, p.name, `${t('lib.playlist')} · ${tracksLabel(p.count)}`)),
+    ...state.playlists.map((p) => item(`data-go="local-playlist" data-id="${p.id}"`, p.cover ? `<img src="${esc(thumb(p.cover))}" alt="" loading="lazy" data-onerr="hide">` : `<span class="qc">${icon('music')}</span>`, p.name, `${t('lib.playlist')} · ${tracksLabel(p.count)}`)),
     state.remotePlaylists.length ? `<div class="mono rail-sep">${esc(t('lib.yt'))}</div>` : '',
-    ...state.remotePlaylists.map((p) => item(`data-go="playlist" data-id="${esc(p.id)}"`, p.cover ? `<img src="${esc(p.cover)}" alt="" data-onerr="hide">` : `<span class="qc">${icon('music')}</span>`, p.title, p.author || t('lib.playlist'))),
+    ...state.remotePlaylists.map((p) => item(`data-go="playlist" data-id="${esc(p.id)}"`, p.cover ? `<img src="${esc(thumb(p.cover))}" alt="" loading="lazy" data-onerr="hide">` : `<span class="qc">${icon('music')}</span>`, p.title, p.author || t('lib.playlist'))),
   ].join('');
   markRail();
 }
@@ -710,7 +718,7 @@ function queueMarkup() {
   if (!q.length) return `<p class="muted">${esc(t('rp.emptyQueue'))}</p>`;
   const lid = registerList(q);
   const row = (x, idx) => `<div class="qrow ${idx === i ? 'playing' : ''}" data-qidx="${idx}" data-list="${lid}" data-idx="${idx}" tabindex="0">
-    <img src="${esc(x.cover || '')}" alt="" loading="lazy" data-onerr="hide"><div class="ttext"><div class="ttitle">${esc(x.title)}</div>
+    <img src="${esc(thumb(x.cover))}" alt="" loading="lazy" decoding="async" data-onerr="hide"><div class="ttext"><div class="ttitle">${esc(x.title)}</div>
     <div class="tartist">${esc(artistNames(x.artists))}</div></div>
     ${idx !== i ? `<button class="icon-btn" data-act="q-remove" aria-label="${esc(t('rp.close'))}">${icon('close')}</button>` : '<span></span>'}</div>`;
   const nextTitle = player.context?.title ? t('rp.nextFrom', { title: player.context.title }) : t('rp.next');
@@ -996,6 +1004,8 @@ const actions = {
   'to-stage': () => toStage(),
   'to-browse': () => { if (!nav.stack.length) go('home'); else morph('browse'); },
   'focus-search': () => focusSearch(),
+  'toggle-play': () => player.toggle(),
+  'side-close': () => closeSide(),
 };
 
 async function sync() {
@@ -1152,7 +1162,12 @@ $('#search-btn').onclick = focusSearch;
   const tw = window.__TAURI__?.window?.getCurrentWindow?.();
   const mobile = !!window.AndroidMedia || /Android|iPhone|iPad/.test(navigator.userAgent);
   const mac = /Mac/.test(navigator.platform || navigator.userAgent);
-  if (tw && !mobile && mac) document.body.classList.add('frame-mac');
+  if (tw && !mobile && mac) {
+    document.body.classList.add('frame-mac');
+    const fs = async () => document.body.classList.toggle('fullscreen', await tw.isFullscreen().catch(() => false));
+    fs();
+    window.addEventListener('resize', debounce(fs, 120));
+  }
   if (tw && !mobile && !mac) {
     document.body.classList.add('frame-custom');
     $('#win-ctrls').hidden = false;
@@ -1221,7 +1236,7 @@ function updateNowPlaying() {
 
 function updateState() {
   const playing = player.playing;
-  for (const b of [$('#btn-play'), $('#cap-play')]) {
+  for (const b of [$('#btn-play'), $('#cap-play'), $('#side-play')].filter(Boolean)) {
     setIcon(b, playing ? 'pause' : 'play');
     b.title = t(playing ? 'pl.pause' : 'pl.play'); b.setAttribute('aria-label', b.title);
   }
@@ -1267,10 +1282,13 @@ function updateTime() {
 }
 function updateVolume() {
   const v = audio.muted ? 0 : audio.volume;
-  const r = $('#vol');
-  r.value = Math.round(v * 100);
-  r.style.setProperty('--p', `${v * 100}%`);
+  for (const r of [$('#vol'), $('#capvol-range')]) {
+    r.value = Math.round(v * 100);
+    r.style.setProperty('--p', `${v * 100}%`);
+  }
+  $('#capvol-val').textContent = Math.round(v * 100);
   setIcon($('#btn-mute'), v === 0 ? 'volume-off' : 'volume');
+  setIcon($('#capvol-btn'), v === 0 ? 'volume-off' : 'volume');
 }
 // Both the stage slider and the capsule's bottom edge seek.
 for (const s of [$('#seek'), $('#cap-seek')]) {
@@ -1284,9 +1302,18 @@ for (const s of [$('#seek'), $('#cap-seek')]) {
   s.addEventListener('pointerdown', (e) => e.stopPropagation());
 }
 {
-  const v = $('#vol');
-  v.addEventListener('input', () => player.setVolume(v.value / 100));
-  v.addEventListener('wheel', (e) => { e.preventDefault(); player.setVolume(audio.volume - Math.sign(e.deltaY) * 0.05); }, { passive: false });
+  const wheel = (e) => { e.preventDefault(); player.setVolume(Math.max(0, Math.min(1, audio.volume - Math.sign(e.deltaY) * 0.05))); };
+  for (const v of [$('#vol'), $('#capvol-range')]) {
+    v.addEventListener('input', () => { if (audio.muted && v.value > 0) player.toggleMute(); player.setVolume(v.value / 100); });
+  }
+  $('#vol').addEventListener('wheel', wheel, { passive: false });
+  // The bubble: a round button beside the capsule that grows up into a slider.
+  const box = $('#capvol'), btn = $('#capvol-btn');
+  const setOpen = (on) => { box.classList.toggle('open', on); btn.setAttribute('aria-expanded', on); };
+  btn.onclick = () => setOpen(!box.classList.contains('open'));
+  box.addEventListener('wheel', wheel, { passive: false });
+  $('#capvol-val').onclick = () => player.toggleMute();
+  document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#capvol')) setOpen(false); });
 }
 
 // Side panel: up next, or synced lyrics.
@@ -1294,7 +1321,11 @@ async function renderSide() {
   const side = $('#side');
   const cur = player.current;
   if (!cur) { side.innerHTML = ''; return; }
-  const tabs = `<div class="side-tabs" role="tablist">${[['queue', t('stage.upNext')], ['lyrics', t('rp.lyrics')]].map(([k, l]) =>
+  const head = `<div class="side-grab" aria-hidden="true"></div>
+    <div class="side-mini"><img src="${esc(thumb(cur.cover))}" alt=""><div class="ttext"><div class="ttitle">${esc(cur.title)}</div><div class="tartist">${esc(artistNames(cur.artists))}</div></div>
+      <button class="tbtn" id="side-play" data-act="toggle-play" title="${esc(t(player.playing ? 'pl.pause' : 'pl.play'))}">${icon(player.playing ? 'pause' : 'play')}</button>
+      <button class="iconbtn side-close" data-act="side-close" title="${esc(t('stage.collapse'))}" aria-label="${esc(t('stage.collapse'))}">${icon('chev-down')}</button></div>`;
+  const tabs = `${head}<div class="side-tabs" role="tablist">${[['queue', t('stage.upNext')], ['lyrics', t('rp.lyrics')]].map(([k, l]) =>
     `<button class="side-tab" role="tab" data-side="${k}" aria-selected="${sideMode === k}">${esc(l)}</button>`).join('')}</div>`;
   if (sideMode === 'queue') {
     const ctx = player.context?.title ? `<div class="mono">${esc(t('rp.nextFrom', { title: player.context.title }))}</div>` : '';
@@ -1313,14 +1344,56 @@ async function renderSide() {
 document.addEventListener('click', (e) => {
   const tab = e.target.closest('.side-tab');
   if (tab) { sideMode = tab.dataset.side; renderSide(); }
+  const open = e.target.closest('[data-side-open]');
+  if (open) openSide(open.dataset.sideOpen);
 });
+
+// Narrow window / phone: the player is alone on screen; Up next and Lyrics rise over it as a
+// sheet (the player steps back) and go down with the chevron, Esc, or a swipe down.
+function openSide(which) {
+  if (which && which !== sideMode) { sideMode = which; renderSide(); }
+  if (!stageCompact()) return;
+  document.body.classList.add('side-open');
+  ensureBackEntry();
+}
+function closeSide() {
+  if (!document.body.classList.contains('side-open')) return false;
+  document.body.classList.remove('side-open');
+  return true;
+}
+{
+  const side = $('#side');
+  let y0 = null, dy = 0;
+  side.addEventListener('pointerdown', (e) => {
+    if (!document.body.classList.contains('side-open') || !e.target.closest('.side-grab, .side-mini, .side-tabs') || e.target.closest('button')) return;
+    y0 = e.clientY; dy = 0; side.style.transition = 'none';
+    side.setPointerCapture?.(e.pointerId);
+  });
+  side.addEventListener('pointermove', (e) => {
+    if (y0 == null) return;
+    dy = Math.max(0, e.clientY - y0);
+    side.style.transform = `translateY(${dy}px)`;
+  });
+  const end = () => {
+    if (y0 == null) return;
+    y0 = null; side.style.transition = ''; side.style.transform = '';
+    if (dy > 80) closeSide();
+  };
+  side.addEventListener('pointerup', end);
+  side.addEventListener('pointercancel', end);
+  // a body swipe down on the lyrics/queue (already at the top) closes it too
+  let ty = null;
+  side.addEventListener('touchstart', (e) => { const b = $('.side-body'); ty = b && b.scrollTop <= 0 && e.target.closest('.side-body') ? e.touches[0].clientY : null; }, { passive: true });
+  side.addEventListener('touchmove', (e) => { if (ty != null && e.touches[0].clientY - ty > 110) { ty = null; closeSide(); } }, { passive: true });
+  matchMedia('(max-width: 1199px)').addEventListener('change', (m) => { if (!m.matches) closeSide(); });
+}
 function queueMarkupUpNext() {
   const q = player.queue, i = player.index;
   const up = q.slice(i + 1, i + 51);
   if (!up.length) return `<p class="empty-line">${esc(t('rp.emptyQueue'))}</p>`;
   const lid = registerList(q);
   return up.map((x, k) => { const idx = i + 1 + k; return `<div class="qrow" data-qidx="${idx}" data-list="${lid}" data-idx="${idx}" tabindex="0">
-    <img src="${esc(x.cover || '')}" alt="" loading="lazy" data-onerr="hide"><div class="ttext"><div class="ttitle">${esc(x.title)}</div>
+    <img src="${esc(thumb(x.cover))}" alt="" loading="lazy" decoding="async" data-onerr="hide"><div class="ttext"><div class="ttitle">${esc(x.title)}</div>
     <div class="tartist">${esc(artistNames(x.artists))}</div></div>
     <button class="icon-btn" data-act="q-remove" aria-label="${esc(t('rp.close'))}">${icon('close')}</button></div>`; }).join('');
 }
@@ -1360,7 +1433,7 @@ $('#btn-repeat').onclick = $('#cap-repeat').onclick = () => player.cycleRepeat()
 $('#btn-mute').onclick = () => player.toggleMute();
 $('#np-like').onclick = $('#cap-like').onclick = () => player.current && toggleLike(player.current);
 $('#np-radio').onclick = () => startRadio(player.current);
-$('#cap-lyrics').onclick = () => { sideMode = 'lyrics'; renderSide(); toStage(); };
+$('#cap-lyrics').onclick = () => { toStage(); openSide('lyrics'); };
 $('#cap-queue').onclick = () => queueSheet();
 $('#cap-open').onclick = $('#cap-expand').onclick = () => toStage();
 $('#np-add').onclick = (e) => {
@@ -1395,7 +1468,7 @@ player.on('error', (x) => toast(t('toast.playFail', { title: x.title }), 'err'))
 // keyboard shortcuts
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    if (closeOverlays()) return;
+    if (closeOverlays() || closeSide()) return;
     if (document.activeElement === sInput) return;
     if (mode() === 'browse') toStage();
     return;

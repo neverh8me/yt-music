@@ -78,12 +78,21 @@
             <button class="play" id="btn-play" data-i18n-title="pl.play"><i data-icon="play"></i></button>
             <button class="tbtn" id="btn-next" data-i18n-title="pl.next"><i data-icon="next"></i></button>
             <button class="tbtn minor" id="btn-repeat" aria-pressed="false" data-i18n-title="pl.repeat"><i data-icon="repeat"></i></button>
+          </div>
+          <!-- volume · Up next / Lyrics (open as a sheet when the player is alone) · sleep, equalizer -->
+          <div class="stage-tools">
             <div class="vol">
               <button class="tbtn minor" id="btn-mute" data-i18n-title="pl.volume"><i data-icon="volume"></i></button>
               <input id="vol" type="range" min="0" max="100" value="80" data-i18n-aria="pl.volumeLevel">
             </div>
-            <button class="tbtn minor sleep-btn" id="btn-sleep" data-i18n-title="sleep.title"><i data-icon="moon"></i><span id="sleep-left"></span></button>
-            <button class="tbtn minor" data-act="open-eq" data-i18n-title="eq.title"><i data-icon="sliders"></i></button>
+            <div class="stage-tabs">
+              <button class="chip" data-side-open="queue"><i data-icon="queue"></i><span data-i18n="stage.upNext"></span></button>
+              <button class="chip" data-side-open="lyrics"><i data-icon="mic"></i><span data-i18n="rp.lyrics"></span></button>
+            </div>
+            <div class="tools-r">
+              <button class="tbtn minor sleep-btn" id="btn-sleep" data-i18n-title="sleep.title"><i data-icon="moon"></i><span id="sleep-left"></span></button>
+              <button class="tbtn minor" data-act="open-eq" data-i18n-title="eq.title"><i data-icon="sliders"></i></button>
+            </div>
           </div>
         </div>
       </section>
@@ -114,6 +123,12 @@
       <button class="tbtn minor wide" data-act="open-eq" data-i18n-title="eq.title"><i data-icon="sliders"></i></button>
       <button class="tbtn minor wide" id="cap-expand" data-i18n-title="cap.expand"><i data-icon="chev-up"></i></button>
       <input id="cap-seek" type="range" min="0" max="1000" value="0" step="1" data-i18n-aria="pl.position">
+    </section>
+    <!-- Volume: a round button beside the capsule that grows up into a slider. -->
+    <section id="capvol">
+      <output id="capvol-val">80</output>
+      <input id="capvol-range" type="range" min="0" max="100" value="80" data-i18n-aria="pl.volumeLevel">
+      <button class="capvol-btn" id="capvol-btn" data-i18n-title="pl.volume" aria-expanded="false"><i data-icon="volume"></i></button>
     </section>
   </div>
 

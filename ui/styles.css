@@ -751,3 +751,113 @@ body.frame-mac #topbar { padding-left: 84px; }
   }
   body[data-mode="browse"] #ambient { opacity: .85; }
 }
+
+/* ============================================================ layout v3 (issue #8)
+   The player fits the window instead of scrolling; on narrow windows and phones it is alone
+   on screen and Up next / Lyrics rise over it as a sheet. The sidebar shrinks to icons, and
+   the volume lives in a bubble beside the capsule. */
+
+/* sidebar: icons only below 1200px, full width above */
+@media (min-width: 761px) { :root { --rail: 76px; } #rail { display: flex; } }
+@media (min-width: 1200px) { :root { --rail: 248px; } }
+@media (min-width: 761px) and (max-width: 1199px) {
+  #rail { padding: var(--s2) var(--s2) var(--s4); align-items: center; }
+  .rail-nav { width: 100%; align-items: center; }
+  .rail-link { width: 52px; justify-content: center; padding: 0; }
+  .rail-link span, .rail-head b, .rail-sep { display: none; }
+  .rail-head { justify-content: center; padding: var(--s3) 0 var(--s2); }
+  .rail-list { align-items: center; width: 100%; }
+  .rail-item { width: auto; padding: 4px; justify-content: center; }
+  .rail-item > div { display: none; }
+}
+
+/* capsule + volume bubble, centred together over the page area */
+:root { --cap-w: min(820px, calc(100vw - var(--rail) - 32px - 82px)); --cap-x: calc(50% + var(--rail) / 2 - 41px); }
+#capsule { left: var(--cap-x); width: var(--cap-w); }
+#capvol { position: absolute; z-index: 7; left: calc(var(--cap-x) + var(--cap-w) / 2 + 10px); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: 72px; height: 72px;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end; overflow: hidden; border-radius: 36px;
+  background: var(--surface-dense); border: 1px solid var(--stroke-strong); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); box-shadow: 0 16px 40px var(--shadow);
+  transform: translateY(160%); opacity: 0; pointer-events: none;
+  transition: transform var(--morph) var(--ease), opacity var(--morph) var(--ease), height 280ms var(--ease); }
+body[data-mode="browse"]:not(.idle) #capvol { transform: none; opacity: 1; pointer-events: auto; }
+#capvol.open { height: 236px; }
+.capvol-btn { flex: none; width: 70px; height: 70px; display: grid; place-items: center; border-radius: 50%; color: var(--text); }
+.capvol-btn .ic { width: 22px; height: 22px; }
+.capvol-btn:hover { background: var(--surface-hover); }
+#capvol output, #capvol input { opacity: 0; transition: opacity 160ms; }
+#capvol.open output, #capvol.open input { opacity: 1; transition-delay: 100ms; }
+#capvol output { flex: none; padding-top: var(--s4); font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer; }
+#capvol input { flex: 1; min-height: 0; margin: var(--s3) 0 0; writing-mode: vertical-lr; direction: rtl; width: 24px; height: auto; }
+#capvol input::-webkit-slider-runnable-track { width: 6px; height: 100%; border-radius: 6px; margin: 0 auto;
+  background: linear-gradient(0deg, var(--text), var(--text)) bottom / 100% var(--p, 80%) no-repeat, var(--surface-active); }
+#capvol input::-webkit-slider-thumb { opacity: 1; width: 16px; height: 16px; margin: 0 0 0 -5px; }
+
+/* the player: the cover takes the height left over by title, buttons and seek bar */
+#stage { overflow: hidden; overflow: clip; grid-template-columns: minmax(0, 600px) minmax(340px, 440px); grid-template-rows: minmax(0, 1fr); align-items: stretch; justify-content: center;
+  gap: clamp(32px, 5vw, 88px); padding: var(--s6) clamp(16px, 4vw, 64px); }
+.now { height: 100%; min-height: 0; justify-content: center; gap: var(--s4); transition: transform 360ms var(--ease), opacity 360ms var(--ease); }
+.stage-art-wrap { flex: 1 1 0; width: 100%; min-width: 0; min-height: 120px; max-height: 560px; container-type: size; display: grid; place-items: center; }
+.stage-art { width: min(100cqw, 100cqh); height: min(100cqw, 100cqh); max-width: 560px; max-height: 560px; }
+.now-meta { flex: none; gap: var(--s3); }
+#stage-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; max-width: 100%; }
+.stage-artist { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.now-meta .transport { flex-wrap: nowrap; gap: var(--s3); }
+.stage-tools { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); width: 100%; min-height: 40px; }
+.stage-tools .vol { margin: 0; }
+.stage-tools .vol input { width: 110px; }
+.tools-r { display: flex; gap: var(--s1); margin-left: auto; }
+.stage-tabs { display: none; gap: var(--s2); }
+.side { position: static; top: auto; height: auto; min-height: 0; }
+.side-grab, .side-mini { display: none; }
+@media (max-height: 680px) {
+  #stage { padding-block: var(--s4); }
+  #stage-ctx { display: none; }
+  #stage-title { -webkit-line-clamp: 1; font-size: var(--fs-title); }
+}
+
+/* player alone (narrow window, phone): Up next / Lyrics open as a sheet over it */
+@media (max-width: 1199px) {
+  #stage { grid-template-columns: minmax(0, 600px); padding: var(--s5) var(--gutter-r) var(--s5) var(--gutter); }
+  .stage-tabs { display: flex; order: 1; }
+  .tools-r { order: 2; margin-left: 0; }
+  .side { position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; margin: 0 auto; width: min(680px, 100%); height: calc(100% - 8px);
+    padding: var(--s2) var(--s4) 0; border-radius: var(--r-xl) var(--r-xl) 0 0; border-bottom: 0; background: var(--surface-dense);
+    backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); box-shadow: 0 -24px 60px var(--shadow);
+    animation: none; transform: translateY(104%); visibility: hidden; transition: transform 360ms var(--ease), visibility 0s 360ms; }
+  body.side-open .side { transform: none; visibility: visible; transition: transform 360ms var(--ease); }
+  body.side-open .now { transform: scale(.92); opacity: .25; pointer-events: none; }
+  .side-grab { display: block; flex: none; width: 40px; height: 5px; border-radius: 3px; background: var(--stroke-strong); margin: var(--s1) auto var(--s3); }
+  .side-mini { display: grid; flex: none; grid-template-columns: 48px minmax(0, 1fr) auto auto; align-items: center; gap: var(--s3); padding-bottom: var(--s3); text-align: left; }
+  .side-mini img { width: 48px; height: 48px; border-radius: var(--r-xs); object-fit: cover; background: var(--surface-hover); }
+  .side-grab, .side-mini, .side-tabs { touch-action: none; cursor: grab; }
+  .side-body { padding-bottom: calc(var(--s4) + env(safe-area-inset-bottom, 0px)); }
+}
+
+/* phone */
+@media (max-width: 760px) {
+  :root { --cap-w: calc(100vw - 24px); --cap-x: 50%; --blur: blur(18px) saturate(140%); }
+  #capvol { display: none; }
+  #stage { padding: var(--s2) var(--gutter-r) calc(var(--s4) + env(safe-area-inset-bottom, 0px)) var(--gutter); }
+  .now { gap: var(--s3); }
+  .stage-art-wrap { min-height: 160px; }
+  .stage-tools .vol { display: none; }
+  .stage-tools { justify-content: center; }
+  .tools-r .sleep-btn { display: grid; }
+  .side { width: 100%; height: calc(100% - 4px); padding-inline: var(--gutter) var(--gutter-r); }
+  /* lighter effects: the drifting light costs a lot on phones */
+  #ambient { animation: none; }
+  /* search: the name slides away to the left as the field opens (the field never squeezes the brand) */
+  #topbar { grid-template-columns: auto minmax(0, 1fr) auto; }
+  #topbar .brand { min-width: max-content; }
+  .search-wrap { min-width: 0; }
+  body:not(.searching) .search-wrap { display: flex; max-width: 0; opacity: 0; padding: 0; border-color: transparent; pointer-events: none; }
+  .search-wrap { justify-self: end; width: 100%; max-width: 100%; transition: max-width 320ms var(--ease), opacity 220ms ease, padding 320ms var(--ease); }
+  .brand-text { max-width: 180px; overflow: hidden; transition: max-width 320ms var(--ease), opacity 200ms ease, transform 320ms var(--ease); }
+  .home-btn { transition: gap 320ms var(--ease); }
+  body.searching .brand-name { display: block; }
+  body.searching .brand-text { max-width: 0; opacity: 0; transform: translateX(-24px); }
+  body.searching .home-btn { gap: 0; }
+}
+
+/* macOS full screen: no traffic lights, so no room kept for them */
+body.frame-mac.fullscreen #topbar { padding-left: var(--gutter); }
