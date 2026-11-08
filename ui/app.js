@@ -947,6 +947,8 @@ const actions = {
   'google-login': async (el) => {
     closeOverlays();
     if (el.closest('.set-block')) { el.disabled = true; el.querySelector('span').textContent = t('set.googleWaiting'); }
+    // Android: native sign-in screen (LoginActivity); it calls window.__androidLogin back.
+    if (window.AndroidAuth) { window.AndroidAuth.login(); return; }
     try { await api.googleLogin(); } catch (e) { toast(errText(e), 'err'); if (mode() === 'browse') render(); }
   },
   'switch-account': async () => {
@@ -1169,7 +1171,11 @@ function updateNowPlaying() {
     if (player.current?.id !== cur.id) return;
     badge.innerHTML = q.offline ? `${icon('lock')}${esc(t('qp.offline'))}` : '';
     badge.title = q.offline ? t('quality.offline') : '';
-  }).catch(() => {});
+  }).catch((e) => {
+    if (window.AndroidMedia && /LOGIN_REQUIRED|age|Sign in/i.test(errText(e)) && player.current?.id === cur.id) {
+      toast(t(state.settings.logged_in ? 'toast.ageAndroid' : 'toast.ageSignIn'), 'err');
+    }
+  });
 }
 
 function updateState() {
@@ -1508,6 +1514,18 @@ listen('google-login', async (r) => {
   if (nav.stack[nav.pos]?.view === 'settings') render();
 });
 listen('google-login-closed', () => { if (nav.stack[nav.pos]?.view === 'settings') render(); });
+// Android sign-in result: the YouTube cookies from LoginActivity (null if cancelled).
+window.__androidLogin = async (cookie) => {
+  if (!cookie) { if (nav.stack[nav.pos]?.view === 'settings') render(); return; }
+  try {
+    await api.login(cookie);
+    state.settings = await api.settings();
+    renderAccount();
+    toast(t('toast.loggedIn'));
+    await sync();
+  } catch (e) { toast(t('toast.googleFail', { e: errText(e) }), 'err'); }
+  if (nav.stack[nav.pos]?.view === 'settings') render();
+};
 
 // ---------------------------------------------------------------- boot
 (async function boot() {

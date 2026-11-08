@@ -14,8 +14,14 @@ const START: &str = "https://accounts.google.com/ServiceLogin?service=youtube&pa
 /// A regular desktop browser UA: Google refuses sign-in in "embedded" browsers it can detect.
 /// Must stay identical to `additionalBrowserArgs` of the main window in tauri.conf.json.
 #[cfg(windows)]
-const MAIN_BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --enable-features=HardwareMediaKeyHandling --autoplay-policy=no-user-gesture-required";
+const MAIN_BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,HardwareMediaKeyHandling,MediaSessionService --autoplay-policy=no-user-gesture-required";
+/// It must match the engine actually rendering the page: Google compares the UA with what
+/// the browser can do and blocks sign-in ("this browser may not be secure") on a mismatch.
+/// Windows renders with WebView2 (Chromium/Edge); macOS and Linux with WebKit (Safari).
+#[cfg(windows)]
 const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0";
+#[cfg(not(windows))]
+const UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15";
 
 #[derive(Clone, serde::Serialize)]
 struct LoginResult {

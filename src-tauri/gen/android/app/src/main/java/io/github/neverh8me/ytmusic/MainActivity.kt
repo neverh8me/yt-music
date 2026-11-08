@@ -7,6 +7,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.Bundle
+import android.content.Intent
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
@@ -17,6 +18,16 @@ import java.util.concurrent.Executors
 
 class MainActivity : TauriActivity() {
   private var webView: WebView? = null
+  private val LOGIN_REQUEST = 7
+
+  @Deprecated("Activity result API of the Tauri base activity")
+  override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+    super.onActivityResult(requestCode, resultCode, data)
+    if (requestCode != LOGIN_REQUEST) return
+    val cookie = data?.getStringExtra(LoginActivity.EXTRA_COOKIE)
+    val arg = if (resultCode == RESULT_OK && cookie != null) JSONObject.quote(cookie) else "null"
+    webView?.evaluateJavascript("window.__androidLogin && window.__androidLogin($arg)", null)
+  }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
@@ -42,12 +53,24 @@ class MainActivity : TauriActivity() {
   override fun onWebViewCreate(webView: WebView) {
     this.webView = webView
     webView.addJavascriptInterface(MediaBridge(), "AndroidMedia")
+    webView.addJavascriptInterface(AuthBridge(), "AndroidAuth")
   }
 
   override fun onDestroy() {
     MediaPlaybackService.onAction = null
     MediaPlaybackService.stop(this)
     super.onDestroy()
+  }
+
+  /** "Sign in with Google" from the web UI: opens LoginActivity. */
+  inner class AuthBridge {
+    @JavascriptInterface
+    fun login() {
+      runOnUiThread {
+        @Suppress("DEPRECATION")
+        startActivityForResult(Intent(this@MainActivity, LoginActivity::class.java), LOGIN_REQUEST)
+      }
+    }
   }
 
   /** Called from ui/player.js with the current track and playback state. */
