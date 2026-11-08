@@ -190,6 +190,15 @@ mod tests {
     }
 }
 
+/// The current track for the system media overlay (Windows; other platforms ignore it).
+#[tauri::command]
+pub fn media_update(app: AppHandle, np: Option<serde_json::Value>) {
+    #[cfg(windows)]
+    crate::media::update(&app, np.and_then(|v| serde_json::from_value(v).ok()));
+    #[cfg(not(windows))]
+    let _ = (app, np);
+}
+
 /// Resolve stream URLs in the background (e.g. the track under the pointer), so a click plays at once.
 #[tauri::command]
 pub fn prefetch(core: St, ids: Vec<String>) {

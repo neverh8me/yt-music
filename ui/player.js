@@ -129,11 +129,38 @@ window.__androidMedia = (action, arg) => {
   else if (action === 'seek') audio.currentTime = Number(arg) / 1000;
 };
 
-const reportAll = () => { reportPresence(); reportAndroid(); };
+// Windows: the system media overlay is driven natively by Rust (named "YT Music");
+// tell it what's playing, and take its play/pause/next/previous/seek back.
+const isWindows = navigator.userAgent.includes('Windows');
+function reportWindows() {
+  if (!isWindows) return;
+  const t = snap.current?.track;
+  api.mediaUpdate(t ? {
+    title: t.title,
+    artist: (t.artists || []).map((a) => a.name).join(', '),
+    album: t.album?.name || '',
+    cover: t.cover || '',
+    duration_ms: Math.round((isFinite(audio.duration) ? audio.duration : t.duration || 0) * 1000),
+    position_ms: Math.round((audio.currentTime || 0) * 1000),
+    playing: !audio.paused && !audio.ended,
+  } : null).catch(() => {});
+}
+if (isWindows) {
+  listen('media-control', ([action, arg]) => {
+    if (action === 'play') audio.play().catch(() => {});
+    else if (action === 'pause') audio.pause();
+    else if (action === 'toggle') player.toggle();
+    else if (action === 'next') player.next();
+    else if (action === 'prev') player.prev();
+    else if (action === 'seek') audio.currentTime = Number(arg);
+  });
+}
+
+const reportAll = () => { reportPresence(); reportAndroid(); reportWindows(); };
 audio.addEventListener('play', () => emit('state'));
 audio.addEventListener('pause', () => { emit('state'); reportAll(); });
 audio.addEventListener('seeked', reportAll);
-audio.addEventListener('durationchange', reportAndroid);
+audio.addEventListener('durationchange', () => { reportAndroid(); reportWindows(); });
 audio.addEventListener('playing', () => { failures = 0; emit('state'); reportAll(); });
 audio.addEventListener('timeupdate', () => emit('time'));
 audio.addEventListener('progress', () => emit('time'));

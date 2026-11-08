@@ -22,6 +22,7 @@ export const api = {
   coverColor: (url) => invoke('cover_color', { url }),
   streamQuality: (id) => invoke('stream_quality', { id }),
   prefetch: (ids) => invoke('prefetch', { ids }),
+  mediaUpdate: (np) => invoke('media_update', { np }),
 
   // Player (queue engine lives in Rust)
   playerState: () => invoke('player_state'),

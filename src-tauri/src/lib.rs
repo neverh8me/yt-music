@@ -7,6 +7,8 @@ mod db;
 mod downloads;
 mod integrations;
 mod lyrics;
+#[cfg(windows)]
+mod media;
 mod models;
 mod playback;
 mod player;
@@ -27,6 +29,9 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Name the app "YT Music" in the Windows media overlay / notifications.
+    #[cfg(windows)]
+    media::register_identity();
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init());
@@ -77,6 +82,8 @@ pub fn run() {
                 });
             }
             app.manage(core);
+            #[cfg(windows)]
+            media::init(app.handle());
             #[cfg(desktop)]
             integrations::register_hotkeys(app.handle());
 
@@ -102,6 +109,7 @@ pub fn run() {
             commands::cover_color,
             commands::stream_quality,
             commands::prefetch,
+            commands::media_update,
             commands::liked_tracks,
             commands::liked_ids,
             commands::set_liked,
