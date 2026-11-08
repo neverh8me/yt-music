@@ -39,10 +39,10 @@
 
 Завантаж інсталятор для своєї платформи з [Releases](../../releases).
 
-- **Windows**: `YT Music_x.y.z_x64-setup.exe`
-- **macOS**: `.dmg` (Apple Silicon та Intel). Застосунок не нотаризований, тому при першому запуску натисни ПКМ → **Відкрити**.
-- **Linux**: `.AppImage` / `.deb`
-- **Android**: `*_android-arm64.apk` (дозволь встановлення з невідомих джерел)
+- **Windows**: `YT.Music_x.y.z_Windows-x64-setup.exe`
+- **macOS**: `*_macOS-Apple-Silicon.dmg` (M1/M2/M3/M4) або `*_macOS-Intel.dmg`. Застосунок не нотаризований, тож під час першого запуску натисни на нього правою кнопкою і вибери **Відкрити**.
+- **Linux**: `*_Linux-x64.deb` (Debian/Ubuntu)
+- **Android**: `*_Android.apk` (дозволь встановлення з невідомих джерел)
 
 ## Збірка з сирців
 

@@ -21,22 +21,67 @@ jobs:
           t="$(mktemp -d)"
           for f in ui/*.js; do cp "$f" "$t/$(basename "${f%.js}").mjs"; node --check "$t/$(basename "${f%.js}").mjs"; done
 
+  # Release notes: the commits since the last published (non-draft) release.
+  notes:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    outputs:
+      body: ${{ steps.log.outputs.body }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Changelog
+        id: log
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PREV="$(gh release list --exclude-drafts --limit 20 --json tagName --jq '.[].tagName' | grep -vx "$GITHUB_REF_NAME" | head -1)"
+          RANGE="${PREV:+$PREV..}$GITHUB_REF_NAME"
+          {
+            echo 'body<<NOTES_EOF'
+            echo "## What's new"
+            echo
+            git log --no-merges --reverse --pretty='- %s' "$RANGE"
+            echo
+            echo '## Downloads'
+            echo
+            echo '| Platform | File |'
+            echo '|---|---|'
+            echo '| Windows | `*_Windows-x64-setup.exe` |'
+            echo '| macOS (Apple Silicon: M1/M2/M3/M4) | `*_macOS-Apple-Silicon.dmg` |'
+            echo '| macOS (Intel) | `*_macOS-Intel.dmg` |'
+            echo '| Linux (Debian/Ubuntu) | `*_Linux-x64.deb` |'
+            echo '| Android | `*_Android.apk` |'
+            echo
+            echo 'macOS builds are not notarized: right-click the app → Open the first time.'
+            echo
+            echo 'Unofficial YouTube Music client. Not affiliated with Google LLC.'
+            [ -n "$PREV" ] && echo && echo "**Full diff:** https://github.com/$GITHUB_REPOSITORY/compare/$PREV...$GITHUB_REF_NAME"
+            echo 'NOTES_EOF'
+          } >> "$GITHUB_OUTPUT"
+
   build:
-    needs: check-ui
+    needs: [check-ui, notes]
     # Manual runs (workflow_dispatch) only check the Android build.
     if: startsWith(github.ref, 'refs/tags/')
     strategy:
       fail-fast: false
       matrix:
+        # `asset`: file names that say which platform they are for
         include:
           - platform: windows-latest
             args: ''
+            asset: 'YT.Music_[version]_Windows-x64[setup][ext]'
           - platform: macos-latest
             args: '--target aarch64-apple-darwin'
+            asset: 'YT.Music_[version]_macOS-Apple-Silicon[ext]'
           - platform: macos-latest
             args: '--target x86_64-apple-darwin'
+            asset: 'YT.Music_[version]_macOS-Intel[ext]'
           - platform: ubuntu-22.04
-            args: ''
+            args: '--bundles deb'
+            asset: 'YT.Music_[version]_Linux-x64[ext]'
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -69,10 +114,8 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'YT Music ${{ github.ref_name }}'
-          releaseBody: |
-            Unofficial YouTube Music client. Not affiliated with Google LLC.
-
-            **Windows:** `*_x64-setup.exe` · **macOS:** `*_aarch64.dmg` (Apple Silicon) / `*_x64.dmg` (Intel). The app isn't notarized, so right-click → Open on first launch · **Linux:** `.AppImage` / `.deb` · **Android:** `*_android-arm64.apk`
+          releaseBody: ${{ needs.notes.outputs.body }}
+          assetNamePattern: ${{ matrix.asset }}
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
@@ -173,5 +216,5 @@ jobs:
         run: |
           APK="$(find src-tauri/gen/android/app/build/outputs/apk -name '*release*.apk' | head -1)"
           VERSION="${GITHUB_REF_NAME#v}"
-          cp "$APK" "YT.Music_${VERSION}_android-arm64.apk"
-          gh release upload "$GITHUB_REF_NAME" "YT.Music_${VERSION}_android-arm64.apk" --clobber
+          cp "$APK" "YT.Music_${VERSION}_Android.apk"
+          gh release upload "$GITHUB_REF_NAME" "YT.Music_${VERSION}_Android.apk" --clobber

@@ -39,10 +39,10 @@ A fast, unofficial YouTube Music desktop client written in Rust (Tauri 2). Searc
 
 Grab the installer for your platform from [Releases](../../releases).
 
-- **Windows**: `YT Music_x.y.z_x64-setup.exe`
-- **macOS**: `.dmg` (Apple Silicon and Intel). The app isn't notarized, so on first launch right-click it and choose **Open**.
-- **Linux**: `.AppImage` / `.deb`
-- **Android**: `*_android-arm64.apk` (allow installing from unknown sources)
+- **Windows**: `YT.Music_x.y.z_Windows-x64-setup.exe`
+- **macOS**: `*_macOS-Apple-Silicon.dmg` (M1/M2/M3/M4) or `*_macOS-Intel.dmg`. The app isn't notarized, so on first launch right-click it and choose **Open**.
+- **Linux**: `*_Linux-x64.deb` (Debian/Ubuntu)
+- **Android**: `*_Android.apk` (allow installing from unknown sources)
 
 ## Build from source
 
