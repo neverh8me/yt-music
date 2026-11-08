@@ -1,10 +1,8 @@
 // Applies the saved theme before first paint (external file: CSP forbids inline scripts).
-// Themes: "classic" (default) and "glass". Each is a full stylesheet; only one is enabled.
+// Themes: "glass" (default, PR #1 by @dopedasya) and "classic". Both are token sets in styles.css.
 (function () {
-  var theme = 'classic';
-  try { theme = localStorage.getItem('theme') || 'classic'; } catch (e) { /* storage unavailable */ }
-  if (theme !== 'glass') theme = 'classic';
+  var theme = 'glass';
+  try { theme = localStorage.getItem('theme') || 'glass'; } catch (e) { /* storage unavailable */ }
+  if (theme !== 'classic') theme = 'glass';
   document.documentElement.dataset.theme = theme;
-  document.getElementById('css-classic').disabled = theme !== 'classic';
-  document.getElementById('css-glass').disabled = theme !== 'glass';
 })();

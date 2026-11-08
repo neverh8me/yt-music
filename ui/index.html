@@ -4,190 +4,103 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>YT Music</title>
-  <link rel="stylesheet" href="styles.css" id="css-classic">
-  <link rel="stylesheet" href="theme-glass.css" id="css-glass" disabled>
+  <link rel="stylesheet" href="styles.css">
   <script src="theme-boot.js"></script>
 </head>
-<body>
-  <!-- Ambient light arcs behind the glass UI (static, never repaints on scroll) -->
-  <svg id="glow" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-    <defs>
-      <linearGradient id="glow-rainbow" x1="0" x2="1" y1="0" y2="0">
-        <stop offset="0" stop-color="#5b8cff"/>
-        <stop offset=".35" stop-color="#ffffff"/>
-        <stop offset=".6" stop-color="#ff8a3d"/>
-        <stop offset="1" stop-color="#5b8cff"/>
-      </linearGradient>
-      <filter id="glow-b35" x="-20%" y="-40%" width="140%" height="180%"><feGaussianBlur stdDeviation="35"/></filter>
-      <filter id="glow-b9" x="-20%" y="-40%" width="140%" height="180%"><feGaussianBlur stdDeviation="9"/></filter>
-      <filter id="glow-b2" x="-20%" y="-40%" width="140%" height="180%"><feGaussianBlur stdDeviation="2"/></filter>
-      <filter id="glow-b100" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="100"/></filter>
-    </defs>
-    <circle cx="1400" cy="100" r="300" fill="#ff8a3d" opacity=".18" filter="url(#glow-b100)"/>
-    <circle cx="100" cy="1000" r="300" fill="#5b8cff" opacity=".16" filter="url(#glow-b100)"/>
-    <g class="arc" fill="none" transform="rotate(-8 730 880)">
-      <ellipse cx="730" cy="880" rx="1250" ry="450" stroke="url(#glow-rainbow)" stroke-width="90" opacity=".45" filter="url(#glow-b35)"/>
-      <ellipse cx="730" cy="880" rx="1250" ry="450" stroke="url(#glow-rainbow)" stroke-width="26" opacity=".7" filter="url(#glow-b9)"/>
-      <ellipse cx="730" cy="880" rx="1250" ry="450" stroke="#fff" stroke-width="6" opacity=".9" filter="url(#glow-b2)"/>
-      <ellipse cx="730" cy="880" rx="1250" ry="450" stroke="#fff" stroke-width="2"/>
-    </g>
-  </svg>
+<body data-mode="stage">
+  <!-- Stage layout: the playing track is home ("stage"). Library, search and pages open as
+       layers over it, and the stage collapses into the capsule player, which never leaves. -->
+  <div id="ambient" aria-hidden="true"></div>
 
   <div id="app">
-    <aside id="sidebar">
-      <!-- Classic theme brand -->
-      <div class="brand brand-classic">
-        <span class="brand-dot"></span>
-        <span class="brand-text">
-          <span class="brand-name">YT Music</span>
-          <span class="brand-sub">powered by Rust 🦀</span>
-        </span>
+    <header id="topbar">
+      <div class="brand">
+        <button class="iconbtn" id="nav-back" data-i18n-title="nav.back" hidden><i data-icon="chev-left"></i></button>
+        <b class="brand-name">YT Music</b>
       </div>
-      <!-- Glass theme brand (design by @dopedasya) -->
-      <div class="brand brand-glass">
-        <span class="brand-mark">Y<i>.</i></span>
-        <span class="brand-text">
-          <span class="brand-name">YT Music<i>.</i></span>
-          <span class="brand-sub">// powered by rust</span>
-        </span>
+      <div class="search-wrap">
+        <i data-icon="search"></i>
+        <input id="search-input" type="search" data-i18n-ph="top.searchPh" autocomplete="off" spellcheck="false">
+        <kbd class="kbd-hint">Ctrl K</kbd>
+        <div id="suggest" class="suggest hidden"></div>
       </div>
-      <nav class="nav-main">
-        <a class="nav-item" data-nav="home"><i data-icon="home"></i><span data-i18n="nav.home"></span></a>
-        <a class="nav-item" data-nav="search"><i data-icon="search"></i><span data-i18n="nav.search"></span></a>
-      </nav>
-      <div class="library">
-        <div class="lib-head">
-          <span><i data-icon="library"></i> <span data-i18n="nav.library"></span></span>
-          <button class="icon-btn" id="new-playlist" data-i18n-title="nav.newPlaylist"><i data-icon="plus"></i></button>
-        </div>
-        <div class="lib-scroll">
-          <a class="nav-item lib-item" data-nav="liked">
-            <span class="lib-cover liked-cover"><i data-icon="heart-fill"></i></span>
-            <span class="lib-text"><b data-i18n="lib.liked"></b><small id="liked-count"></small></span>
-          </a>
-          <a class="nav-item lib-item" data-nav="downloads">
-            <span class="lib-cover dl-cover"><i data-icon="download"></i></span>
-            <span class="lib-text"><b data-i18n="lib.downloads"></b><small id="dl-count"></small></span>
-          </a>
-          <a class="nav-item lib-item" data-nav="history">
-            <span class="lib-cover hist-cover"><i data-icon="history"></i></span>
-            <span class="lib-text"><b data-i18n="lib.history"></b><small data-i18n="lib.historySub"></small></span>
-          </a>
-          <div id="playlist-list"></div>
-          <div id="remote-playlists"></div>
-        </div>
+      <div class="top-right">
+        <button class="iconbtn" id="search-btn" data-i18n-title="nav.search"><i data-icon="search"></i></button>
+        <button class="pill-btn update-btn hidden" id="update-btn" data-act="install-update"></button>
+        <button class="avatar" id="avatar" aria-haspopup="menu" aria-expanded="false"></button>
       </div>
-      <a class="nav-item settings-link" data-nav="settings"><i data-icon="settings"></i><span data-i18n="nav.settings"></span></a>
-    </aside>
+    </header>
 
-    <main id="main">
-      <header id="topbar">
-        <div class="history-btns">
-          <button class="round-btn" id="nav-back" data-i18n-title="nav.back"><i data-icon="chev-left"></i></button>
-          <button class="round-btn" id="nav-fwd" data-i18n-title="nav.forward"><i data-icon="chev-right"></i></button>
+    <main id="stage">
+      <div class="stage-idle">
+        <h1 data-i18n="stage.idle"></h1>
+        <p class="muted" data-i18n="stage.idleSub"></p>
+        <button class="pill-btn primary big" data-nav="home" data-i18n="stage.browse"></button>
+      </div>
+      <section class="now">
+        <div class="stage-art-wrap"><img id="stage-art" class="stage-art" alt="" draggable="false"></div>
+        <div class="now-meta">
+          <div class="mono" id="stage-ctx"></div>
+          <h1 id="stage-title"></h1>
+          <div class="stage-artist" id="stage-artist"></div>
+          <div class="chips">
+            <button class="chip" id="np-like" aria-pressed="false"><i data-icon="heart"></i><span></span></button>
+            <button class="chip" id="np-add"><i data-icon="plus"></i><span data-i18n="chip.add"></span></button>
+            <button class="chip" id="np-radio"><i data-icon="radio"></i><span data-i18n="chip.radio"></span></button>
+            <button class="chip" id="np-lyrics" aria-pressed="false"><i data-icon="mic"></i><span data-i18n="rp.lyrics"></span></button>
+            <span id="np-quality" class="qpill"></span>
+          </div>
+          <div class="seek">
+            <input id="seek" type="range" min="0" max="1000" value="0" step="1" data-i18n-aria="pl.position">
+            <div class="times"><span id="t-cur">0:00</span><span id="t-dur">0:00</span></div>
+          </div>
+          <div class="transport">
+            <button class="tbtn minor" id="btn-shuffle" aria-pressed="false" data-i18n-title="pl.shuffle"><i data-icon="shuffle"></i></button>
+            <button class="tbtn" id="btn-prev" data-i18n-title="pl.prev"><i data-icon="prev"></i></button>
+            <button class="play" id="btn-play" data-i18n-title="pl.play"><i data-icon="play"></i></button>
+            <button class="tbtn" id="btn-next" data-i18n-title="pl.next"><i data-icon="next"></i></button>
+            <button class="tbtn minor" id="btn-repeat" aria-pressed="false" data-i18n-title="pl.repeat"><i data-icon="repeat"></i></button>
+            <div class="vol">
+              <button class="tbtn minor" id="btn-mute" data-i18n-title="pl.volume"><i data-icon="volume"></i></button>
+              <input id="vol" type="range" min="0" max="100" value="80" data-i18n-aria="pl.volumeLevel">
+            </div>
+            <button class="tbtn minor sleep-btn" id="btn-sleep" data-i18n-title="sleep.title"><i data-icon="moon"></i><span id="sleep-left"></span></button>
+            <button class="tbtn minor" data-act="open-eq" data-i18n-title="eq.title"><i data-icon="sliders"></i></button>
+          </div>
         </div>
-        <div class="search-wrap">
-          <i data-icon="search"></i>
-          <input id="search-input" type="text" data-i18n-ph="top.searchPh" autocomplete="off" spellcheck="false">
-          <div id="suggest" class="suggest hidden"></div>
-        </div>
-        <div class="top-right">
-          <button class="pill-btn update-btn hidden" id="update-btn" data-act="install-update"></button>
-          <button class="pill-btn" id="account-btn" data-nav="settings" data-i18n="top.login"></button>
-        </div>
-      </header>
-      <section id="view"></section>
+      </section>
+      <aside class="side" id="side"></aside>
     </main>
 
-    <aside id="rightpanel" class="hidden">
-      <div class="rp-tabs">
-        <button class="rp-tab active" data-tab="queue" data-i18n="rp.queue"></button>
-        <button class="rp-tab" data-tab="lyrics" data-i18n="rp.lyrics"></button>
-        <button class="icon-btn rp-close" id="rp-close" data-i18n-title="rp.close"><i data-icon="close"></i></button>
-      </div>
-      <div id="rp-body"></div>
-    </aside>
-
-    <footer id="player">
-      <div class="now">
-        <img id="np-cover" class="np-cover" alt="">
-        <div class="np-text">
-          <div id="np-title" class="np-title"></div>
-          <div id="np-artist" class="np-artist"></div>
-        </div>
-        <button class="icon-btn" id="np-like" data-i18n-title="pl.like"><i data-icon="heart"></i></button>
-        <button class="icon-btn" id="np-add" data-i18n-title="menu.addPlaylist"><i data-icon="list-plus"></i></button>
-      </div>
-      <div class="controls">
-        <div class="ctrl-btns">
-          <button class="icon-btn" id="btn-shuffle" data-i18n-title="pl.shuffle"><i data-icon="shuffle"></i></button>
-          <button class="icon-btn" id="btn-prev" data-i18n-title="pl.prev"><i data-icon="prev"></i></button>
-          <button class="play-btn" id="btn-play" data-i18n-title="pl.play"><i data-icon="play"></i></button>
-          <button class="icon-btn" id="btn-next" data-i18n-title="pl.next"><i data-icon="next"></i></button>
-          <button class="icon-btn" id="btn-repeat" data-i18n-title="pl.repeat"><i data-icon="repeat"></i></button>
-        </div>
-        <div class="seek">
-          <span id="t-cur">0:00</span>
-          <div class="bar" id="seekbar"><div class="bar-buf" id="seek-buf"></div><div class="bar-fill" id="seek-fill"></div><div class="bar-knob" id="seek-knob"></div></div>
-          <span id="t-dur">0:00</span>
-        </div>
-      </div>
-      <div class="extra">
-        <span id="np-quality" class="qpill"></span>
-        <button class="icon-btn sleep-btn" id="btn-sleep" data-i18n-title="sleep.title"><i data-icon="moon"></i><span id="sleep-left"></span></button>
-        <button class="icon-btn" id="btn-lyrics" data-i18n-title="pl.lyrics"><i data-icon="mic"></i></button>
-        <button class="icon-btn" id="btn-queue" data-i18n-title="pl.queue"><i data-icon="queue"></i></button>
-        <button class="icon-btn" id="btn-mute" data-i18n-title="pl.volume"><i data-icon="volume"></i></button>
-        <div class="bar vol" id="volbar"><div class="bar-fill" id="vol-fill"></div><div class="bar-knob" id="vol-knob"></div></div>
-      </div>
-    </footer>
-    <nav id="tabbar">
-      <a class="tab" data-nav="home"><i data-icon="home"></i><span data-i18n="nav.home"></span></a>
-      <a class="tab" data-nav="search"><i data-icon="search"></i><span data-i18n="nav.search"></span></a>
-      <a class="tab" data-nav="library"><i data-icon="library"></i><span data-i18n="nav.library"></span></a>
-      <a class="tab" data-nav="settings"><i data-icon="settings"></i><span data-i18n="nav.settings"></span></a>
+    <nav id="dock">
+      <div class="handle" aria-hidden="true"></div>
+      <div class="tabs" id="dock-tabs"></div>
+      <div class="shelf" id="dock-shelf"></div>
     </nav>
+
+    <section id="main"><div id="view"></div></section>
+
+    <section id="capsule">
+      <img id="cap-art" class="cap-art" alt="">
+      <button class="cap-meta" id="cap-open" data-i18n-aria="cap.expand"><b id="cap-title"></b><span id="cap-sub"></span></button>
+      <button class="tbtn wide" id="cap-like" data-i18n-title="pl.like"><i data-icon="heart"></i></button>
+      <button class="tbtn wide" id="cap-prev" data-i18n-title="pl.prev"><i data-icon="prev"></i></button>
+      <button class="play" id="cap-play" data-i18n-title="pl.play"><i data-icon="play"></i></button>
+      <button class="tbtn" id="cap-next" data-i18n-title="pl.next"><i data-icon="next"></i></button>
+      <span class="cap-div wide" aria-hidden="true"></span>
+      <button class="tbtn minor wide" id="cap-queue" data-i18n-title="pl.queue"><i data-icon="queue"></i></button>
+      <button class="tbtn minor wide" id="cap-lyrics" data-i18n-title="pl.lyrics"><i data-icon="mic"></i></button>
+      <button class="tbtn minor wide" data-act="open-eq" data-i18n-title="eq.title"><i data-icon="sliders"></i></button>
+      <button class="tbtn minor wide" id="cap-expand" data-i18n-title="cap.expand"><i data-icon="chev-up"></i></button>
+      <div id="cap-progress" aria-hidden="true"></div>
+    </section>
   </div>
 
-  <!-- Full-screen "Now Playing" (tap the mini player on phones, the cover on desktop) -->
-  <section id="nowplaying" class="np-sheet" aria-hidden="true">
-    <header class="nps-top">
-      <button class="icon-btn" id="nps-close" data-i18n-title="rp.close"><i data-icon="chev-down"></i></button>
-      <div class="nps-context" id="nps-context"></div>
-      <button class="icon-btn" id="nps-more" data-i18n-title="tr.more"><i data-icon="more"></i></button>
-    </header>
-    <div class="nps-body">
-      <img id="nps-cover" class="nps-cover" alt="">
-      <div class="nps-meta">
-        <div class="nps-text">
-          <div id="nps-title" class="nps-title"></div>
-          <div id="nps-artist" class="nps-artist"></div>
-        </div>
-        <button class="icon-btn" id="nps-like" data-i18n-title="pl.like"><i data-icon="heart"></i></button>
-      </div>
-      <div class="nps-seek">
-        <div class="bar" id="nps-seekbar"><div class="bar-buf" id="nps-buf"></div><div class="bar-fill" id="nps-fill"></div><div class="bar-knob" id="nps-knob"></div></div>
-        <div class="nps-times"><span id="nps-cur">0:00</span><span id="nps-dur">0:00</span></div>
-      </div>
-      <div class="nps-ctrls">
-        <button class="icon-btn" id="nps-shuffle" data-i18n-title="pl.shuffle"><i data-icon="shuffle"></i></button>
-        <button class="icon-btn big" id="nps-prev" data-i18n-title="pl.prev"><i data-icon="prev"></i></button>
-        <button class="nps-play" id="nps-play" data-i18n-title="pl.play"><i data-icon="play"></i></button>
-        <button class="icon-btn big" id="nps-next" data-i18n-title="pl.next"><i data-icon="next"></i></button>
-        <button class="icon-btn" id="nps-repeat" data-i18n-title="pl.repeat"><i data-icon="repeat"></i></button>
-      </div>
-      <div class="nps-tabs">
-        <button class="nps-tab" id="nps-queue"><i data-icon="queue"></i><span data-i18n="rp.queue"></span></button>
-        <button class="nps-tab" id="nps-lyrics"><i data-icon="mic"></i><span data-i18n="rp.lyrics"></span></button>
-        <button class="nps-tab" id="nps-add"><i data-icon="list-plus"></i><span data-i18n="menu.addPlaylist"></span></button>
-      </div>
-    </div>
-  </section>
-
-  <div id="ctxmenu" class="ctxmenu hidden"></div>
+  <div id="overlay"></div>
+  <div id="ctxmenu" class="ctxmenu hidden" role="menu"></div>
   <div id="modal-root"></div>
-  <div id="toasts"></div>
-  <audio id="audio" preload="auto"></audio>
+  <div id="toasts" role="status" aria-live="polite"></div>
+  <audio id="audio" preload="auto" crossorigin="anonymous"></audio>
 
   <script type="module" src="app.js"></script>
 </body>

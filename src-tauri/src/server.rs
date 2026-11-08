@@ -229,7 +229,29 @@ fn token_ok(given: &str, expected: &str) -> bool {
     given.len() == expected.len() && given.bytes().zip(expected.bytes()).fold(0u8, |acc, (a, b)| acc | (a ^ b)) == 0
 }
 
-async fn stream(State(core): State<Arc<Core>>, Path((token, id)): Path<(String, String)>, req: Request) -> Response {
+/// Origins of the app's own webview. Only these get CORS, so the equalizer (Web Audio)
+/// can process the stream; any other page still can't read the bytes.
+const APP_ORIGINS: [&str; 3] = ["http://tauri.localhost", "https://tauri.localhost", "tauri://localhost"];
+
+async fn stream(state: State<Arc<Core>>, path: Path<(String, String)>, req: Request) -> Response {
+    let origin = req
+        .headers()
+        .get(header::ORIGIN)
+        .and_then(|v| v.to_str().ok())
+        .filter(|o| APP_ORIGINS.contains(o))
+        .map(str::to_owned);
+    let mut resp = stream_inner(state, path, req).await;
+    if let Some(o) = origin
+        && let Ok(v) = HeaderValue::from_str(&o)
+    {
+        let h = resp.headers_mut();
+        h.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, v);
+        h.insert(header::VARY, HeaderValue::from_static("Origin"));
+    }
+    resp
+}
+
+async fn stream_inner(State(core): State<Arc<Core>>, Path((token, id)): Path<(String, String)>, req: Request) -> Response {
     if !token_ok(&token, &core.stream_token) || !local_host(&req, core.port.load(std::sync::atomic::Ordering::Relaxed)) {
         return StatusCode::FORBIDDEN.into_response();
     }
