@@ -62,6 +62,9 @@
     "shortDescription": "Fast unofficial YouTube Music client",
     "longDescription": "A fast, unofficial YouTube Music client written in Rust: search, streaming, library, lyrics and offline downloads.",
     "licenseFile": "../LICENSE",
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
     "windows": {
       "nsis": {
         "installMode": "currentUser",

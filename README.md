@@ -61,6 +61,17 @@ Grab the file for your platform from [Releases](../../releases). Each release li
 
 macOS builds aren't notarized: on first launch right-click the app and choose **Open**.
 
+### System requirements
+
+| Platform | Minimum |
+|---|---|
+| Windows | Windows 10 or 11, 64-bit (WebView2 is built in) |
+| macOS | macOS 11 Big Sur or later (Apple Silicon or Intel) |
+| Linux | Ubuntu 22.04+, Debian 12+ or another distro with glibc 2.35 and WebKitGTK 4.1; x86-64 |
+| Android | Android 7.0+ on a 64-bit ARM phone, with Android System WebView kept up to date (Google Play) |
+
+The desktop apps download [yt-dlp](https://github.com/yt-dlp/yt-dlp) on first start (about 18 MB) to play music. An internet connection is needed except for downloaded songs.
+
 ## Build from source
 
 Requirements: [Rust](https://rustup.rs) (stable). On Windows you also need the MSVC Build Tools and WebView2 (preinstalled on Windows 10/11). On Linux you need the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).

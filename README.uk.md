@@ -61,6 +61,17 @@
 
 Збірки для macOS не нотаризовані: під час першого запуску натисни на застосунок правою кнопкою і вибери **Відкрити**.
 
+### Системні вимоги
+
+| Платформа | Мінімум |
+|---|---|
+| Windows | Windows 10 або 11, 64-біт (WebView2 уже вбудований) |
+| macOS | macOS 11 Big Sur або новіша (Apple Silicon чи Intel) |
+| Linux | Ubuntu 22.04+, Debian 12+ або інший дистрибутив із glibc 2.35 і WebKitGTK 4.1; x86-64 |
+| Android | Android 7.0+ на 64-бітному ARM-телефоні, з оновленим Android System WebView (Google Play) |
+
+На ПК під час першого запуску застосунок завантажує [yt-dlp](https://github.com/yt-dlp/yt-dlp) (близько 18 МБ) для відтворення. Інтернет потрібен, окрім завантажених треків.
+
 ## Збирання з коду
 
 Потрібно: [Rust](https://rustup.rs) (stable). На Windows також MSVC Build Tools і WebView2 (вже є в Windows 10/11). На Linux — [залежності Tauri](https://v2.tauri.app/start/prerequisites/).
