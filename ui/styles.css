@@ -716,3 +716,8 @@ body.paused .stage-art { transform: scale(.94); filter: saturate(.85); }
 .stage-art-wrap { width: min(calc(100vh - var(--top-h) - 360px), 100%, 560px); min-width: 200px; }
 #stage { padding-top: var(--s5); }
 .now { gap: var(--s4); }
+/* brand: the app's mark (not another Home icon), name left-aligned next to it */
+.home-btn { text-align: left; justify-content: flex-start; padding: 4px 8px 4px 4px; }
+.brand-text { align-items: flex-start; }
+.brand-mark { width: 32px; height: 32px; border-radius: 9px; }
+.brand-mark .ic { width: 14px; height: 14px; margin-left: 2px; }
