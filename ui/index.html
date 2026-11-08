@@ -149,6 +149,41 @@
     </nav>
   </div>
 
+  <!-- Full-screen "Now Playing" (tap the mini player on phones, the cover on desktop) -->
+  <section id="nowplaying" class="np-sheet" aria-hidden="true">
+    <header class="nps-top">
+      <button class="icon-btn" id="nps-close" data-i18n-title="rp.close"><i data-icon="chev-down"></i></button>
+      <div class="nps-context" id="nps-context"></div>
+      <button class="icon-btn" id="nps-more" data-i18n-title="tr.more"><i data-icon="more"></i></button>
+    </header>
+    <div class="nps-body">
+      <img id="nps-cover" class="nps-cover" alt="">
+      <div class="nps-meta">
+        <div class="nps-text">
+          <div id="nps-title" class="nps-title"></div>
+          <div id="nps-artist" class="nps-artist"></div>
+        </div>
+        <button class="icon-btn" id="nps-like" data-i18n-title="pl.like"><i data-icon="heart"></i></button>
+      </div>
+      <div class="nps-seek">
+        <div class="bar" id="nps-seekbar"><div class="bar-buf" id="nps-buf"></div><div class="bar-fill" id="nps-fill"></div><div class="bar-knob" id="nps-knob"></div></div>
+        <div class="nps-times"><span id="nps-cur">0:00</span><span id="nps-dur">0:00</span></div>
+      </div>
+      <div class="nps-ctrls">
+        <button class="icon-btn" id="nps-shuffle" data-i18n-title="pl.shuffle"><i data-icon="shuffle"></i></button>
+        <button class="icon-btn big" id="nps-prev" data-i18n-title="pl.prev"><i data-icon="prev"></i></button>
+        <button class="nps-play" id="nps-play" data-i18n-title="pl.play"><i data-icon="play"></i></button>
+        <button class="icon-btn big" id="nps-next" data-i18n-title="pl.next"><i data-icon="next"></i></button>
+        <button class="icon-btn" id="nps-repeat" data-i18n-title="pl.repeat"><i data-icon="repeat"></i></button>
+      </div>
+      <div class="nps-tabs">
+        <button class="nps-tab" id="nps-queue"><i data-icon="queue"></i><span data-i18n="rp.queue"></span></button>
+        <button class="nps-tab" id="nps-lyrics"><i data-icon="mic"></i><span data-i18n="rp.lyrics"></span></button>
+        <button class="nps-tab" id="nps-add"><i data-icon="list-plus"></i><span data-i18n="menu.addPlaylist"></span></button>
+      </div>
+    </div>
+  </section>
+
   <div id="ctxmenu" class="ctxmenu hidden"></div>
   <div id="modal-root"></div>
   <div id="toasts"></div>

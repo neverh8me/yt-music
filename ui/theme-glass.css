@@ -578,3 +578,38 @@ kbd { font: 600 11px/1 var(--mono); background: var(--surface); border: 1px soli
 /* ------------------------------------------------------------ theme isolation */
 /* Elements that belong to the Classic theme only. */
 .brand-classic, .greet { display: none !important; }
+
+/* ------------------------------------------------------------ Now Playing (full screen) */
+.np-sheet { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; color: #fff;
+  --nps-color: #3a3a48;
+  background: radial-gradient(120% 70% at 50% 0%, color-mix(in srgb, var(--nps-color) 80%, transparent), transparent 70%), #07070a;
+  backdrop-filter: blur(30px);
+  transform: translateY(100%); visibility: hidden; transition: transform .32s cubic-bezier(.2,.8,.2,1), visibility 0s linear .32s;
+  padding: calc(8px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom)); }
+.np-sheet.open { transform: none; visibility: visible; transition: transform .32s cubic-bezier(.2,.8,.2,1); }
+.nps-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; }
+.nps-top .ic { width: 26px; height: 26px; }
+.nps-context { flex: 1; text-align: center; font: 600 11px/1.2 "Geist Mono", ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; color: #3ddc84; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nps-body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 22px; width: 100%; max-width: 520px; margin: 0 auto; min-height: 0; }
+.nps-cover { width: 100%; max-height: 52vh; max-width: min(100%, 52vh); aspect-ratio: 1; object-fit: cover; border-radius: 22px; align-self: center;
+  box-shadow: 0 30px 80px #000c, 0 0 0 1px #ffffff1a; }
+.nps-meta { display: flex; align-items: center; gap: 12px; }
+.nps-text { flex: 1; min-width: 0; }
+.nps-title { font-size: 26px; font-weight: 700; letter-spacing: -0.03em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nps-artist { color: #ffffffa6; font-size: 16px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#nps-like .ic { width: 28px; height: 28px; }
+.nps-seek .bar { height: 20px; }
+.nps-seek .bar::before, .nps-seek .bar-buf, .nps-seek .bar-fill { top: 8px; }
+.nps-seek .bar-knob { top: 4px; opacity: 1; }
+.nps-times { display: flex; justify-content: space-between; font: 500 12px/1 "Geist Mono", ui-monospace, monospace; color: #ffffffa6; margin-top: 4px; }
+.nps-ctrls { display: flex; align-items: center; justify-content: space-between; }
+.nps-ctrls .icon-btn .ic { width: 26px; height: 26px; }
+.nps-ctrls .icon-btn.big .ic { width: 36px; height: 36px; }
+.nps-play { width: 74px; height: 74px; border-radius: 50%; border: 0; background: #fff; color: #000; display: grid; place-items: center; box-shadow: 0 0 40px #ffffff40; }
+.nps-play .ic { width: 32px; height: 32px; }
+.nps-tabs { display: flex; justify-content: space-around; gap: 8px; }
+.nps-tab { display: flex; flex-direction: column; align-items: center; gap: 4px; background: #ffffff0d; border: 1px solid #ffffff14; color: #ffffffcc;
+  font-size: 12px; font-weight: 600; padding: 8px 14px; border-radius: 14px; }
+.nps-tab .ic { width: 20px; height: 20px; }
+#np-cover { cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .np-sheet, .np-sheet.open { transition: none; } }

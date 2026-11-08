@@ -959,6 +959,7 @@ function updateNowPlaying() {
   $('#np-like').classList.toggle('on', liked);
   setIcon($('#np-like'), liked ? 'heart-fill' : 'heart');
   document.title = `${cur.title} · ${artistNames(cur.artists)}`;
+  if (npsIsOpen()) updateNps();
   // Quality badge (codec · kbps, lock icon when playing the encrypted offline copy).
   const badge = $('#np-quality');
   badge.textContent = '';
@@ -1039,16 +1040,15 @@ $('#btn-shuffle').onclick = () => player.toggleShuffle();
 $('#btn-repeat').onclick = () => player.cycleRepeat();
 $('#btn-mute').onclick = () => player.toggleMute();
 $('#np-like').onclick = () => player.current && toggleLike(player.current);
-$('#np-cover').onclick = () => openPanel('queue');
-
 player.on('track', () => {
   updateNowPlaying();
+  updateNps();
   renderPanel();
   if (nav.stack[nav.pos]?.view === 'lyrics') render();
 });
 player.on('queue', () => { if (rpTab === 'queue') renderPanel(); });
-player.on('state', updateState);
-player.on('time', () => { updateTime(); syncLyrics(); });
+player.on('state', () => { updateState(); updateNpsState(); });
+player.on('time', () => { updateTime(); updateNpsTime(); syncLyrics(); });
 player.on('volume', updateVolume);
 player.on('error', (x) => toast(t('toast.playFail', { title: x.title }), 'err'));
 
@@ -1083,6 +1083,88 @@ listen('download-progress', (p) => {
     if (mark) mark.outerHTML = html; else el.insertAdjacentHTML('afterbegin', html);
   });
 });
+
+// ---------------------------------------------------------------- Now Playing (full screen)
+const nps = $('#nowplaying');
+const npsIsOpen = () => nps.classList.contains('open');
+function npsOpen() {
+  if (!player.current || npsIsOpen()) return;
+  updateNps();
+  nps.classList.add('open');
+  nps.setAttribute('aria-hidden', 'false');
+  // a history entry so the Android back button / mouse back closes the sheet
+  try { history.pushState({ nps: true }, ''); } catch { /* ignore */ }
+}
+function npsClose(fromHistory = false) {
+  if (!npsIsOpen()) return;
+  nps.classList.remove('open');
+  nps.setAttribute('aria-hidden', 'true');
+  if (!fromHistory) { try { history.back(); } catch { /* ignore */ } }
+}
+window.addEventListener('popstate', () => npsClose(true));
+function updateNps() {
+  const cur = player.current;
+  if (!cur) { if (npsIsOpen()) npsClose(); return; }
+  $('#nps-cover').src = cur.cover || COVER_PLACEHOLDER;
+  $('#nps-title').textContent = cur.title;
+  $('#nps-artist').innerHTML = artistLinks(cur.artists);
+  $('#nps-context').textContent = player.context?.title || '';
+  const liked = state.liked.has(cur.id);
+  $('#nps-like').classList.toggle('on', liked);
+  setIcon($('#nps-like'), liked ? 'heart-fill' : 'heart');
+  if (cur.cover) {
+    api.coverColor(cur.cover).then((c) => { if (player.current?.id === cur.id) nps.style.setProperty('--nps-color', c); }).catch(() => {});
+  }
+}
+function updateNpsState() {
+  setIcon($('#nps-play'), player.playing ? 'pause' : 'play');
+  $('#nps-shuffle').classList.toggle('on', player.shuffle);
+  $('#nps-repeat').classList.toggle('on', player.repeat !== 'off');
+  setIcon($('#nps-repeat'), player.repeat === 'one' ? 'repeat-one' : 'repeat');
+}
+function updateNpsTime() {
+  if (!npsIsOpen() || dragging === 'nps') return;
+  const d = audio.duration, c = audio.currentTime;
+  const f = isFinite(d) && d > 0 ? c / d : 0;
+  $('#nps-fill').style.width = `${f * 100}%`;
+  $('#nps-knob').style.left = `${f * 100}%`;
+  $('#nps-cur').textContent = fmt(c);
+  $('#nps-dur').textContent = fmt(isFinite(d) ? d : player.current?.duration);
+  if (audio.buffered.length && isFinite(d)) $('#nps-buf').style.width = `${(audio.buffered.end(audio.buffered.length - 1) / d) * 100}%`;
+}
+bindBar($('#nps-seekbar'), 'nps', (f) => {
+  $('#nps-fill').style.width = `${f * 100}%`;
+  $('#nps-knob').style.left = `${f * 100}%`;
+  if (isFinite(audio.duration)) $('#nps-cur').textContent = fmt(f * audio.duration);
+}, (f) => player.seek(f));
+$('#nps-close').onclick = () => npsClose();
+$('#nps-play').onclick = () => player.toggle();
+$('#nps-next').onclick = () => player.next();
+$('#nps-prev').onclick = () => player.prev();
+$('#nps-shuffle').onclick = () => player.toggleShuffle();
+$('#nps-repeat').onclick = () => player.cycleRepeat();
+$('#nps-like').onclick = () => player.current && toggleLike(player.current);
+$('#nps-queue').onclick = () => { npsClose(); openPanel('queue'); };
+$('#nps-lyrics').onclick = () => { npsClose(); if (nav.stack[nav.pos]?.view !== 'lyrics') go('lyrics'); };
+$('#nps-add').onclick = (e) => $('#np-add').onclick(e);
+$('#nps-more').onclick = (e) => { const cur = player.current; if (cur) trackMenu(cur, null, -1, e.clientX, e.clientY); };
+// Any navigation from inside the sheet (artist/album links) closes it.
+nps.addEventListener('click', (e) => { if (e.target.closest('[data-go]')) npsClose(); }, true);
+// Swipe down to close on touch screens.
+{
+  let y0 = null;
+  nps.addEventListener('touchstart', (e) => { y0 = e.touches[0].clientY; }, { passive: true });
+  nps.addEventListener('touchend', (e) => {
+    if (y0 != null && e.changedTouches[0].clientY - y0 > 90 && !e.target.closest('.bar')) npsClose();
+    y0 = null;
+  }, { passive: true });
+}
+// Phones: tap the mini player; desktop: click the cover.
+$('#player .now').addEventListener('click', (e) => {
+  if (e.target.closest('button, a')) return;
+  if (matchMedia('(max-width: 700px)').matches || e.target.id === 'np-cover') npsOpen();
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && npsIsOpen()) npsClose(); });
 
 // ---------------------------------------------------------------- sleep timer (logic in Rust)
 let sleepTick = null;

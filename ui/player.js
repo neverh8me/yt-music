@@ -102,10 +102,39 @@ export const player = {
 
 // Tell Rust what's playing (Discord "Listening to"); it reads the track from its queue.
 const reportPresence = () => api.presence(!audio.paused && !audio.ended, audio.currentTime || 0).catch(() => {});
+
+// Android: mirror state into the native MediaSession (lock screen / notification player,
+// headset buttons). `AndroidMedia` is injected by MainActivity.kt; absent elsewhere.
+const androidMedia = window.AndroidMedia;
+function reportAndroid() {
+  if (!androidMedia) return;
+  const t = snap.current?.track;
+  if (!t) { androidMedia.stop(); return; }
+  androidMedia.update(JSON.stringify({
+    title: t.title,
+    artist: (t.artists || []).map((a) => a.name).join(', '),
+    album: t.album?.name || '',
+    cover: t.cover || '',
+    durationMs: Math.round((isFinite(audio.duration) ? audio.duration : t.duration || 0) * 1000),
+    positionMs: Math.round((audio.currentTime || 0) * 1000),
+    playing: !audio.paused && !audio.ended,
+  }));
+}
+// Lock-screen / headset actions arrive here (called via evaluateJavascript).
+window.__androidMedia = (action, arg) => {
+  if (action === 'play') audio.play().catch(() => {});
+  else if (action === 'pause') audio.pause();
+  else if (action === 'next') player.next();
+  else if (action === 'prev') player.prev();
+  else if (action === 'seek') audio.currentTime = Number(arg) / 1000;
+};
+
+const reportAll = () => { reportPresence(); reportAndroid(); };
 audio.addEventListener('play', () => emit('state'));
-audio.addEventListener('pause', () => { emit('state'); reportPresence(); });
-audio.addEventListener('seeked', reportPresence);
-audio.addEventListener('playing', () => { failures = 0; emit('state'); reportPresence(); });
+audio.addEventListener('pause', () => { emit('state'); reportAll(); });
+audio.addEventListener('seeked', reportAll);
+audio.addEventListener('durationchange', reportAndroid);
+audio.addEventListener('playing', () => { failures = 0; emit('state'); reportAll(); });
 audio.addEventListener('timeupdate', () => emit('time'));
 audio.addEventListener('progress', () => emit('time'));
 audio.addEventListener('durationchange', () => emit('time'));
