@@ -59,6 +59,11 @@ jobs:
             -e 's/DEVELOPMENT_TEAM = [^;]*;/DEVELOPMENT_TEAM = "";/g' \
             -e 's/buildSettings = {/buildSettings = { CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; CODE_SIGN_IDENTITY = ""; CODE_SIGN_ENTITLEMENTS = ""; PROVISIONING_PROFILE_SPECIFIER = "";/g' \
             "$PBX"
+          # The "Build Rust Code" phase calls the CLI the way it was started; under npx that is
+          # `npm run -- tauri`, which needs a package.json. Call the cargo shim instead.
+          sed -i '' -e 's/npm run -- tauri/cargo tauri/g' -e 's/npm run tauri/cargo tauri/g' "$PBX"
+          [ -f project.yml ] && sed -i '' -e 's/npm run -- tauri/cargo tauri/g' -e 's/npm run tauri/cargo tauri/g' project.yml
+          grep -o "[a-z ]*tauri ios xcode-script" "$PBX" | sort -u
           grep -c "CODE_SIGNING_ALLOWED = NO" "$PBX"
           grep -n "CODE_SIGN_STYLE\|DEVELOPMENT_TEAM" "$PBX" | head
 
@@ -94,7 +99,7 @@ jobs:
           # a failed build can leave an empty .app behind: require the executable
           if [ -z "$(find "$APP" -maxdepth 1 -type f -perm -u+x -size +1M)" ]; then
             echo "::error::the .app has no executable (build failed)"
-            grep -nE "error:|error[|failed" "$RUNNER_TEMP/build.log" | tail -40 || true
+            grep -nE "error:|error\[|failed" "$RUNNER_TEMP/build.log" | tail -40 || true
             exit 1
           fi
           VERSION="$(node -p "require('./tauri.conf.json').version")"
