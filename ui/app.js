@@ -1159,11 +1159,20 @@ nps.addEventListener('click', (e) => { if (e.target.closest('[data-go]')) npsClo
     y0 = null;
   }, { passive: true });
 }
-// Phones: tap the mini player; desktop: click the cover.
-$('#player .now').addEventListener('click', (e) => {
-  if (e.target.closest('button, a')) return;
+// Phones: tap anywhere on the mini player except its buttons/progress; desktop: the cover.
+$('#player').addEventListener('click', (e) => {
+  if (e.target.closest('button, a, .bar, input')) return;
   if (matchMedia('(max-width: 700px)').matches || e.target.id === 'np-cover') npsOpen();
 });
+// Swipe up on the mini player opens it too (phones).
+{
+  let y0 = null;
+  $('#player').addEventListener('touchstart', (e) => { y0 = e.touches[0].clientY; }, { passive: true });
+  $('#player').addEventListener('touchend', (e) => {
+    if (y0 != null && y0 - e.changedTouches[0].clientY > 40) npsOpen();
+    y0 = null;
+  }, { passive: true });
+}
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && npsIsOpen()) npsClose(); });
 
 // ---------------------------------------------------------------- sleep timer (logic in Rust)

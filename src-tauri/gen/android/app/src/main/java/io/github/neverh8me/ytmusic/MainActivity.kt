@@ -1,6 +1,7 @@
 package io.github.neverh8me.ytmusic
 
 import android.Manifest
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -20,6 +21,11 @@ class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    // Phones: portrait only (the phone UI is built for it, like the official app).
+    // Tablets: rotate, but honour the system auto-rotate lock ("USER").
+    requestedOrientation =
+      if (resources.configuration.smallestScreenWidthDp < 600) ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT
+      else ActivityInfo.SCREEN_ORIENTATION_USER
     // Android 13+: the playback notification needs this permission.
     if (Build.VERSION.SDK_INT >= 33 &&
       checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
