@@ -712,3 +712,7 @@ body.paused .stage-art { transform: scale(.94); filter: saturate(.85); }
   .carousel-track { grid-auto-columns: 42%; gap: 16px; }
   .mixes { grid-auto-columns: 78%; gap: 16px; }
 }
+/* keep the controls on screen: the cover shares the height with title, chips, seek and transport */
+.stage-art-wrap { width: min(calc(100vh - var(--top-h) - 360px), 100%, 560px); min-width: 200px; }
+#stage { padding-top: var(--s5); }
+.now { gap: var(--s4); }

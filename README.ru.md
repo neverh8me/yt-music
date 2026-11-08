@@ -6,14 +6,15 @@
 
 > Неофициальный проект, не связан с Google LLC и не одобрен ею. YouTube и YouTube Music — торговые марки Google LLC.
 
-![Страница альбома в цвете обложки](docs/screenshots/album.png)
+![Главная: миксы для тебя, быстрый выбор, твои плейлисты сбоку](docs/screenshots/home.png)
 
-| Синхронизированные тексты | На телефоне |
+| Плеер с синхронизированным текстом | На телефоне |
 |---|---|
 | ![Тексты](docs/screenshots/lyrics.png) | <img src="docs/screenshots/mobile.png" alt="На телефоне" width="300"> |
 
 <details><summary>Ещё скриншоты</summary>
 
+![Альбом](docs/screenshots/album.png)
 ![Исполнитель](docs/screenshots/artist.png)
 ![Поиск](docs/screenshots/search.png)
 

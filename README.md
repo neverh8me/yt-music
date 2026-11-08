@@ -6,14 +6,15 @@ A fast, unofficial YouTube Music desktop client written in Rust (Tauri 2). Searc
 
 > Unofficial project. Not affiliated with, endorsed by, or sponsored by Google LLC. YouTube and YouTube Music are trademarks of Google LLC.
 
-![Album page tinted with the cover's colour](docs/screenshots/album.png)
+![Home: mixes made for you, quick picks, your playlists in the sidebar](docs/screenshots/home.png)
 
-| Synced lyrics | Phone layout |
+| Player with synced lyrics | Phone layout |
 |---|---|
-| ![Synced lyrics](docs/screenshots/lyrics.png) | <img src="docs/screenshots/mobile.png" alt="Phone layout" width="300"> |
+| ![Player with synced lyrics](docs/screenshots/lyrics.png) | <img src="docs/screenshots/mobile.png" alt="Phone layout" width="300"> |
 
 <details><summary>More screenshots</summary>
 
+![Album](docs/screenshots/album.png)
 ![Artist](docs/screenshots/artist.png)
 ![Search](docs/screenshots/search.png)
 
