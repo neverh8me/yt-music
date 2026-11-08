@@ -1179,12 +1179,12 @@ function updateState() {
     b.title = t(playing ? 'pl.pause' : 'pl.play'); b.setAttribute('aria-label', b.title);
   }
   document.body.classList.toggle('paused', !playing);
-  const sh = $('#btn-shuffle');
-  sh.setAttribute('aria-pressed', player.shuffle);
-  const rp = $('#btn-repeat');
-  rp.setAttribute('aria-pressed', player.repeat !== 'off');
-  setIcon(rp, player.repeat === 'one' ? 'repeat-one' : 'repeat');
-  rp.title = t({ off: 'pl.repeatOff', all: 'pl.repeatAll', one: 'pl.repeatOne' }[player.repeat] || 'pl.repeat'); rp.setAttribute('aria-label', rp.title);
+  for (const sh of [$('#btn-shuffle'), $('#cap-shuffle')]) sh.setAttribute('aria-pressed', player.shuffle);
+  for (const rp of [$('#btn-repeat'), $('#cap-repeat')]) {
+    rp.setAttribute('aria-pressed', player.repeat !== 'off');
+    setIcon(rp, player.repeat === 'one' ? 'repeat-one' : 'repeat');
+    rp.title = t({ off: 'pl.repeatOff', all: 'pl.repeatAll', one: 'pl.repeatOne' }[player.repeat] || 'pl.repeat'); rp.setAttribute('aria-label', rp.title);
+  }
   const cur = player.current?.id;
   $$('.trow').forEach((r) => {
     r.classList.toggle('playing', r.dataset.tid === cur);
@@ -1308,8 +1308,8 @@ document.addEventListener('touchmove', (e) => { if (e.target.closest('.side-body
 $('#btn-play').onclick = $('#cap-play').onclick = () => player.toggle();
 $('#btn-next').onclick = $('#cap-next').onclick = () => player.next();
 $('#btn-prev').onclick = $('#cap-prev').onclick = () => player.prev();
-$('#btn-shuffle').onclick = () => player.toggleShuffle();
-$('#btn-repeat').onclick = () => player.cycleRepeat();
+$('#btn-shuffle').onclick = $('#cap-shuffle').onclick = () => player.toggleShuffle();
+$('#btn-repeat').onclick = $('#cap-repeat').onclick = () => player.cycleRepeat();
 $('#btn-mute').onclick = () => player.toggleMute();
 $('#np-like').onclick = $('#cap-like').onclick = () => player.current && toggleLike(player.current);
 $('#np-radio').onclick = () => startRadio(player.current);
