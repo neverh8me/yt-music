@@ -450,6 +450,12 @@ impl Yt {
         Ok(())
     }
 
+    /// Get YouTube's current player parsed for the challenge solver ahead of time, so the first
+    /// signed-in (18+) song on Android doesn't wait for it.
+    pub async fn warm_solver(&self) -> Result<()> {
+        self.solver.player().await.map(|_| ())
+    }
+
     /// Cookie header of the signed-in session (from the encrypted cache), if any.
     pub fn session_cookie(&self) -> Option<String> {
         use rustypipe::cache::CacheStorage;

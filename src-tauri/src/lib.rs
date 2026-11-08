@@ -121,6 +121,7 @@ pub fn run() {
             commands::prefetch,
             commands::media_update,
             jsplayer::js_solve_done,
+            commands::warm_solver,
             commands::liked_tracks,
             commands::liked_ids,
             commands::set_liked,

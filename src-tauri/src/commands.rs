@@ -435,6 +435,12 @@ pub async fn refresh_account_info(core: &Core) -> Result<(), String> {
     Ok(())
 }
 
+/// Android: parse YouTube's player for 18+ playback in the background (see Yt::warm_solver).
+#[tauri::command]
+pub async fn warm_solver(core: St<'_>) -> Res<()> {
+    core.yt.warm_solver().await.map_err(e)
+}
+
 #[tauri::command]
 pub async fn refresh_account(core: St<'_>) -> Res<()> {
     refresh_account_info(&core).await

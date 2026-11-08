@@ -1146,6 +1146,16 @@ $('#search-btn').onclick = focusSearch;
 // The worker is built from the solver's source (a blob): older Android WebViews don't serve a
 // worker's own file requests from the app. If a worker can't start, the solver runs here on the
 // main thread (loaded as plain scripts): a short pause beats Rust's slow QuickJS fallback.
+// Older WebViews (Android 12 images ship Chromium 92) lack a few built-ins the solver uses.
+function solverPolyfills() {
+  const def = (o, k, v) => { if (!o[k]) Object.defineProperty(o, k, { configurable: true, writable: true, value: v }); };
+  def(Object, "hasOwn", (o, k) => Object.prototype.hasOwnProperty.call(o, k));
+  const at = function (i) { i = Math.trunc(i) || 0; if (i < 0) i += this.length; return this[i]; };
+  def(Array.prototype, "at", at);
+  def(String.prototype, "at", at);
+  def(Array.prototype, "findLast", function (f, t) { for (let i = this.length - 1; i >= 0; i--) if (f.call(t, this[i], i, this)) return this[i]; return undefined; });
+  def(Array.prototype, "findLastIndex", function (f, t) { for (let i = this.length - 1; i >= 0; i--) if (f.call(t, this[i], i, this)) return i; return -1; });
+}
 {
   const FILES = ['ejs/yt.solver.lib.min.js', 'ejs/yt.solver.core.min.js'];
   const reply = (id, out) => api.jsSolveDone(id, out).catch(() => {});
@@ -1154,10 +1164,16 @@ $('#search-btn').onclick = focusSearch;
   };
   let main = null;
   const mainJsc = () => main ??= (async () => {
+    solverPolyfills();
+    let loadErr = '';
+    const onErr = (e) => { loadErr = e.message || String(e.error); };
+    window.addEventListener('error', onErr);
     for (const src of FILES) {
       await new Promise((ok, fail) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => fail(new Error(src)); document.head.appendChild(s); });
       if (window.lib) { window.meriyah = window.lib.meriyah; window.astring = window.lib.astring; }
     }
+    window.removeEventListener('error', onErr);
+    if (typeof window.jsc !== 'function') { main = null; throw new Error(`solver did not load: ${loadErr || 'unknown'}`); }
     return window.jsc;
   })();
   const solveHere = async (id, input) => {
@@ -1167,12 +1183,13 @@ $('#search-btn').onclick = focusSearch;
   let worker = null; // Promise<Worker> | 'broken'
   const startWorker = async () => {
     const [lib, core] = await Promise.all(FILES.map((f) => fetch(f).then((r) => { if (!r.ok) throw new Error(f); return r.text(); })));
-    const code = `${lib}\nvar meriyah = lib.meriyah, astring = lib.astring;\n${core}\n`
+    const code = `(${solverPolyfills})();\n${lib}\nvar meriyah = lib.meriyah, astring = lib.astring;\n${core}\n`
       + `onmessage = (e) => { const { id, input } = e.data; let out; try { out = JSON.stringify(jsc(JSON.parse(input))); } catch (err) { out = JSON.stringify({ type: 'error', error: String(err) }); } postMessage({ id, out }); };`;
     const w = new Worker(URL.createObjectURL(new Blob([code], { type: 'text/javascript' })));
     w.onmessage = (e) => { pending.delete(e.data.id); reply(e.data.id, e.data.out); };
     w.onerror = (e) => {
       e.preventDefault?.();
+      console.warn('solver worker failed:', e.message);
       worker = 'broken';
       for (const [id, input] of pending) solveHere(id, input);
       pending.clear();
@@ -1186,8 +1203,9 @@ $('#search-btn').onclick = focusSearch;
       const w = await worker;
       pending.set(id, input);
       w.postMessage({ id, input });
-      // a worker that never answers counts as broken too
-      setTimeout(() => { if (pending.delete(id)) { worker = 'broken'; solveHere(id, input); } }, 25000);
+      // a worker that never answers counts as broken too (Rust gives up at 90 s; parsing a new
+      // player on a slow phone can take a while, so don't start a second copy too early)
+      setTimeout(() => { if (pending.delete(id)) { worker = 'broken'; solveHere(id, input); } }, 70000);
     } catch {
       worker = 'broken';
       solveHere(id, input);
@@ -1675,6 +1693,7 @@ window.__androidLogin = async (cookie) => {
     await api.login(cookie);
     state.settings = await api.settings();
     renderAccount();
+    api.warmSolver().catch(() => {});
     toast(t('toast.loggedIn'));
     await sync();
   } catch (e) { toast(t('toast.googleFail', { e: errText(e) }), 'err'); }
@@ -1699,6 +1718,8 @@ window.__androidLogin = async (cookie) => {
   go('home');
   api.sleepState().then(showSleep).catch(() => {});
   // Signed in before account info existed (or the avatar changed): fetch it once per start.
+  // Android (no yt-dlp): prepare YouTube's player for 18+ songs before the first one is played.
+  if (state.settings.logged_in && window.AndroidMedia) setTimeout(() => api.warmSolver().catch(() => {}), 5000);
   if (state.settings.logged_in) {
     api.refreshAccount()
       .then(async () => { state.settings = await api.settings(); renderAccount(); })

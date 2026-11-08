@@ -24,6 +24,7 @@ export const api = {
   prefetch: (ids) => invoke('prefetch', { ids }),
   mediaUpdate: (np) => invoke('media_update', { np }),
   jsSolveDone: (id, out) => invoke('js_solve_done', { id, out }),
+  warmSolver: () => invoke('warm_solver'),
 
   // Player (queue engine lives in Rust)
   playerState: () => invoke('player_state'),
