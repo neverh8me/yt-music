@@ -91,7 +91,7 @@ The logic is Rust; the web layer renders the interface and plays `<audio>`.
 
 ```
 ui/                 interface (no build step): app.js, player.js, api.js, eq.js, i18n.js, icons.js,
-                    solver-worker.js + ejs/ (stream challenge solver, see below)
+                    ejs/ (stream challenge solver, see below)
 src-tauri/src/
   lib.rs            startup, command registration (desktop + Android entry point)
   player.rs         queue engine: shuffle, repeat, autoplay radio, persistence

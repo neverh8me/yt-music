@@ -1143,15 +1143,55 @@ $('#search-btn').onclick = focusSearch;
 // ---------------------------------------------------------------- stream challenge solver
 // Rust asks the webview's JS engine to run yt-dlp's solver (signed-in 18+ playback without
 // yt-dlp, e.g. on Android); a worker keeps it off the UI thread. See jsplayer.rs.
+// The worker is built from the solver's source (a blob): older Android WebViews don't serve a
+// worker's own file requests from the app. If a worker can't start, the solver runs here on the
+// main thread (loaded as plain scripts): a short pause beats Rust's slow QuickJS fallback.
 {
-  let worker = null;
-  listen('js-solve', ({ id, input }) => {
-    if (!worker) {
-      worker = new Worker('solver-worker.js');
-      worker.onmessage = (e) => api.jsSolveDone(e.data.id, e.data.out).catch(() => {});
-      worker.onerror = () => { worker = null; };
+  const FILES = ['ejs/yt.solver.lib.min.js', 'ejs/yt.solver.core.min.js'];
+  const reply = (id, out) => api.jsSolveDone(id, out).catch(() => {});
+  const run = (jsc, input) => {
+    try { return JSON.stringify(jsc(JSON.parse(input))); } catch (err) { return JSON.stringify({ type: 'error', error: String(err) }); }
+  };
+  let main = null;
+  const mainJsc = () => main ??= (async () => {
+    for (const src of FILES) {
+      await new Promise((ok, fail) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => fail(new Error(src)); document.head.appendChild(s); });
+      if (window.lib) { window.meriyah = window.lib.meriyah; window.astring = window.lib.astring; }
     }
-    worker.postMessage({ id, input });
+    return window.jsc;
+  })();
+  const solveHere = async (id, input) => {
+    try { reply(id, run(await mainJsc(), input)); } catch (err) { reply(id, JSON.stringify({ type: 'error', error: String(err) })); }
+  };
+  const pending = new Map();
+  let worker = null; // Promise<Worker> | 'broken'
+  const startWorker = async () => {
+    const [lib, core] = await Promise.all(FILES.map((f) => fetch(f).then((r) => { if (!r.ok) throw new Error(f); return r.text(); })));
+    const code = `${lib}\nvar meriyah = lib.meriyah, astring = lib.astring;\n${core}\n`
+      + `onmessage = (e) => { const { id, input } = e.data; let out; try { out = JSON.stringify(jsc(JSON.parse(input))); } catch (err) { out = JSON.stringify({ type: 'error', error: String(err) }); } postMessage({ id, out }); };`;
+    const w = new Worker(URL.createObjectURL(new Blob([code], { type: 'text/javascript' })));
+    w.onmessage = (e) => { pending.delete(e.data.id); reply(e.data.id, e.data.out); };
+    w.onerror = (e) => {
+      e.preventDefault?.();
+      worker = 'broken';
+      for (const [id, input] of pending) solveHere(id, input);
+      pending.clear();
+    };
+    return w;
+  };
+  listen('js-solve', async ({ id, input }) => {
+    if (worker === 'broken') return solveHere(id, input);
+    try {
+      worker ??= startWorker();
+      const w = await worker;
+      pending.set(id, input);
+      w.postMessage({ id, input });
+      // a worker that never answers counts as broken too
+      setTimeout(() => { if (pending.delete(id)) { worker = 'broken'; solveHere(id, input); } }, 25000);
+    } catch {
+      worker = 'broken';
+      solveHere(id, input);
+    }
   });
 }
 

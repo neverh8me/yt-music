@@ -859,6 +859,27 @@ body[data-mode="browse"]:not(.idle) #capvol { transform: none; opacity: 1; point
   body.searching .home-btn { gap: 0; }
 }
 
+/* landscape phone / short wide screen: cover on the left, controls on the right */
+@media (orientation: landscape) and (max-height: 560px) {
+  :root { --top-h: calc(56px + env(safe-area-inset-top, 0px)); }
+  #stage { padding-block: var(--s3); }
+  .now { flex-direction: row; align-items: center; justify-content: center; gap: clamp(16px, 4vw, 40px); text-align: left; }
+  .stage-art-wrap { flex: 0 0 auto; width: auto; height: 100%; max-height: 100%; min-height: 0; aspect-ratio: 1; }
+  .now-meta { flex: 1 1 0; min-width: 0; max-width: 520px; align-items: stretch; gap: var(--s2); }
+  .now-meta .chips, .now-meta .transport { justify-content: flex-start; }
+  #stage-ctx { display: none; }
+  #stage-title { -webkit-line-clamp: 1; font-size: var(--fs-title); }
+  .stage-artist { font-size: var(--fs-body); }
+  .now-meta .play { width: 52px; height: 52px; }
+  .stage-close { top: var(--s1); }
+  /* phones have volume keys; the rest of the row must fit next to the cover */
+  .stage-tools .vol { display: none; }
+  .stage-tools { justify-content: flex-start; gap: var(--s2); }
+  .stage-tabs .chip { padding: 0 12px; }
+}
+/* the brand never slides under the search field (narrow windows, landscape phones) */
+#topbar .brand { min-width: max-content; }
+
 /* older WebViews (before Chromium 105) have no container units: a square cover sized by the screen */
 @supports not (width: 1cqw) {
   .stage-art { width: min(100%, 42vh, 560px); height: auto; aspect-ratio: 1; }

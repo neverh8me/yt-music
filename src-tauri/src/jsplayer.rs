@@ -20,7 +20,7 @@ static APP: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
 static PENDING: std::sync::Mutex<Option<HashMap<u64, tokio::sync::oneshot::Sender<String>>>> = std::sync::Mutex::new(None);
 static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
-/// Let the solver use the app's webview (ui/solver-worker.js). Call once at startup.
+/// Let the solver use the app's webview (a worker in app.js). Call once at startup.
 pub fn attach(app: tauri::AppHandle) {
     let _ = APP.set(app);
 }

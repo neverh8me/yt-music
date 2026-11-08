@@ -418,6 +418,8 @@ pub fn set_download_dir(core: St, path: String) -> Res<()> {
 pub async fn login_cookies(core: St<'_>, text: String) -> Res<()> {
     core.yt.login(&text).await.map_err(e)?;
     core.db.set_setting("logged_in", "1").map_err(e)?;
+    // name and avatar for the account menu (Android sign-in and pasted cookies come this way)
+    let _ = refresh_account_info(&core).await;
     Ok(())
 }
 
