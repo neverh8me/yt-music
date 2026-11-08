@@ -1,4 +1,5 @@
 //! YT Music — app entry point (desktop `main.rs` and the Android activity both call `run`).
+mod account;
 mod auth;
 mod color;
 mod commands;
@@ -121,6 +122,7 @@ pub fn run() {
             commands::set_chart_region,
             commands::login_cookies,
             commands::logout,
+            commands::refresh_account,
             commands::sync_account,
             commands::remote_playlists,
             commands::install_ytdlp,

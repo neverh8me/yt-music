@@ -6365,7 +6365,7 @@ dependencies = [
 
 [[package]]
 name = "ytubem"
-version = "0.3.6"
+version = "0.3.8"
 dependencies = [
  "anyhow",
  "axum",
@@ -6383,6 +6383,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "sha1",
  "sha2",
  "sys-locale",
  "tauri",

@@ -56,6 +56,59 @@ pub async fn get_url(dir: &Path, id: &str, format: &str) -> Result<String> {
         .ok_or_else(|| anyhow!("yt-dlp returned no URL"))
 }
 
+/// Signed-in variant for age-restricted songs: the session is written to a short-lived,
+/// owner-only Netscape cookie file (yt-dlp's format), deleted right after the call.
+pub async fn get_url_signed_in(dir: &Path, tmp_dir: &Path, id: &str, format: &str, cookie_header: &str) -> Result<String> {
+    let bin = find(dir).ok_or_else(|| anyhow!("yt-dlp is not installed"))?;
+    let mut rnd = [0u8; 8];
+    getrandom::fill(&mut rnd).map_err(|e| anyhow!("rng: {e}"))?;
+    let name: String = rnd.iter().map(|b| format!("{b:02x}")).collect();
+    let file = tmp_dir.join(format!("ck-{name}.txt"));
+    let mut txt = String::from("# Netscape HTTP Cookie File\n");
+    for kv in cookie_header.split(';').map(str::trim).filter(|s| !s.is_empty()) {
+        if let Some((k, v)) = kv.split_once('=') {
+            txt.push_str(&format!(".youtube.com\tTRUE\t/\tTRUE\t2147483647\t{k}\t{v}\n"));
+        }
+    }
+    std::fs::create_dir_all(tmp_dir)?;
+    std::fs::write(&file, txt)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600))?;
+    }
+    let mut c = cmd(&bin);
+    c.args(["-f", format, "--get-url", "--no-playlist", "--no-warnings", "--cookies"]).arg(&file);
+    // yt-dlp needs a JS runtime for YouTube's web clients; use Node if installed.
+    if let Some(node) = which_node() {
+        c.arg("--js-runtimes").arg(format!("node:{}", node.display()));
+    }
+    let out = c.arg(watch_url(id)).output().await;
+    let _ = std::fs::remove_file(&file);
+    let out = out?;
+    if !out.status.success() {
+        bail!("{}", String::from_utf8_lossy(&out.stderr).trim());
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .next()
+        .map(|s| s.trim().to_string())
+        .filter(|s| s.starts_with("http"))
+        .ok_or_else(|| anyhow!("yt-dlp returned no URL"))
+}
+
+fn which_node() -> Option<PathBuf> {
+    let exe = if cfg!(windows) { "node.exe" } else { "node" };
+    let on_path = std::env::var_os("PATH").and_then(|p| std::env::split_paths(&p).map(|d| d.join(exe)).find(|p| p.is_file()));
+    // A freshly installed Node isn't on the PATH of already-running sessions on Windows.
+    #[cfg(windows)]
+    let on_path = on_path.or_else(|| {
+        let p = PathBuf::from(r"C:\Program Files\nodejs\node.exe");
+        p.is_file().then_some(p)
+    });
+    on_path
+}
+
 const SUMS_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS";
 
 /// Expected SHA-256 of `name` from the release's SHA2-256SUMS file.

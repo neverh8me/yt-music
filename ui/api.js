@@ -66,6 +66,7 @@ export const api = {
   googleLogin: () => invoke('google_login'),
   login: (text) => invoke('login_cookies', { text }),
   logout: () => invoke('logout'),
+  refreshAccount: () => invoke('refresh_account'),
   syncAccount: () => invoke('sync_account'),
   remotePlaylists: () => invoke('remote_playlists'),
   installYtdlp: () => invoke('install_ytdlp'),

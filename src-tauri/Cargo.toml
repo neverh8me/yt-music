@@ -1,6 +1,6 @@
 [package]
 name = "ytubem"
-version = "0.3.7"
+version = "0.3.8"
 edition = "2024"
 description = "Fast unofficial YouTube Music client"
 license = "GPL-3.0-only"
@@ -33,6 +33,7 @@ url = "2.5.8"
 chacha20poly1305 = "0.10"
 sys-locale = "0.3"
 tauri-plugin-notification = "2"
+sha1 = "0.10"
 
 # rquickjs-sys (pulled in by rustypipe) ships no prebuilt bindings for Android;
 # generate them with bindgen there. Needs libclang (LIBCLANG_PATH) at build time.

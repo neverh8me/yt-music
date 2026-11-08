@@ -90,6 +90,9 @@ async fn capture(app: AppHandle, core: Arc<Core>) {
                 Ok(()) => {
                     log(&core, "signed in");
                     let _ = core.db.set_setting("logged_in", "1");
+                    if let Err(e) = crate::commands::refresh_account_info(&core).await {
+                        log(&core, &format!("account info unavailable: {e}"));
+                    }
                     done(&app, true, None);
                 }
                 Err(e) => {

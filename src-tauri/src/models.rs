@@ -155,6 +155,7 @@ pub struct Settings {
     pub download_dir: String,
     pub logged_in: bool,
     pub account_name: Option<String>,
+    pub account_avatar: Option<String>,
     pub ytdlp: Option<String>,
     /// yt-dlp only exists on desktop; the UI hides its section elsewhere.
     pub ytdlp_supported: bool,

@@ -102,9 +102,13 @@ async function render() {
   const entry = nav.stack[nav.pos];
   const token = ++renderToken;
   const el = $('#view');
-  $$('.nav-item, .tab').forEach((a) => a.classList.toggle('active', a.dataset.nav === entry.view
-    || (entry.view === 'local-playlist' && a.dataset.pl == entry.params.id)
-    || (entry.view === 'playlist' && a.dataset.rpl === entry.params.id)));
+  // Playlist entries are matched by id (all of them share the same view name).
+  $$('.nav-item, .tab').forEach((a) => {
+    const on = a.dataset.pl != null ? entry.view === 'local-playlist' && a.dataset.pl == entry.params.id
+      : a.dataset.rpl != null ? entry.view === 'playlist' && a.dataset.rpl === entry.params.id
+      : a.dataset.nav === entry.view;
+    a.classList.toggle('active', on);
+  });
   $('#nav-back').disabled = nav.pos <= 0;
   $('#nav-fwd').disabled = nav.pos >= nav.stack.length - 1;
   el.innerHTML = '<div class="loading">' + icon('spinner', 'spin') + '</div>';
@@ -560,7 +564,16 @@ function renderSidebar() {
     <a class="nav-item lib-item" data-nav="playlist" data-rpl="${esc(p.id)}">
       <span class="lib-cover">${p.cover ? `<img src="${esc(p.cover)}" alt="">` : icon('music')}</span>
       <span class="lib-text"><b>${esc(p.title)}</b><small>${esc(p.author || t('lib.playlist'))}</small></span></a>`).join('') : '';
-  $('#account-btn').textContent = state.settings.logged_in ? (state.settings.account_name || t('top.account')) : t('top.login');
+  const acc = $('#account-btn');
+  const s = state.settings;
+  if (s.logged_in) {
+    const name = s.account_name || t('top.account');
+    acc.innerHTML = `${s.account_avatar ? `<img class="acc-avatar" src="${esc(s.account_avatar)}" alt="" data-onerr="remove">` : ''}<span>${esc(name)}</span>`;
+    acc.classList.add('acc-in');
+  } else {
+    acc.textContent = t('top.login');
+    acc.classList.remove('acc-in');
+  }
 }
 
 // ---------------------------------------------------------------- right panel
@@ -1309,6 +1322,12 @@ listen('google-login-closed', () => { if (nav.stack[nav.pos]?.view === 'settings
   updateNowPlaying();
   go('home');
   api.sleepState().then(showSleep).catch(() => {});
+  // Signed in before account info existed (or the avatar changed): fetch it once per start.
+  if (state.settings.logged_in) {
+    api.refreshAccount()
+      .then(async () => { state.settings = await api.settings(); renderSidebar(); })
+      .catch(() => {});
+  }
   // Quietly look for a new version a few seconds after start.
   setTimeout(() => checkForUpdate(false), 4000);
 })();

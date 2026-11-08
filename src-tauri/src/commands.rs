@@ -105,12 +105,8 @@ pub async fn get_artist(core: St<'_>, id: String) -> Res<ArtistPage> {
 
 #[tauri::command]
 pub async fn get_playlist(core: St<'_>, id: String) -> Res<PlaylistPage> {
-    let authed = core.db.get_setting("logged_in").is_some();
-    match core.yt.playlist(&id, authed).await {
-        Ok(p) => Ok(p),
-        // private playlists need auth, public ones sometimes fail with it: try the other way
-        Err(first) => core.yt.playlist(&id, !authed).await.map_err(|_| e(first)),
-    }
+    let logged_in = core.db.get_setting("logged_in").is_some();
+    core.yt.playlist_any(&id, logged_in).await.map_err(e)
 }
 
 #[tauri::command]
@@ -316,6 +312,7 @@ pub async fn get_settings(core: St<'_>) -> Res<Settings> {
         download_dir: core.download_dir().to_string_lossy().into_owned(),
         logged_in: core.db.get_setting("logged_in").is_some(),
         account_name: core.db.get_setting("account_name"),
+        account_avatar: core.db.get_setting("account_avatar"),
         ytdlp,
         ytdlp_supported: cfg!(desktop),
         download_quality: match core.download_codec() {
@@ -353,11 +350,29 @@ pub async fn login_cookies(core: St<'_>, text: String) -> Res<()> {
     Ok(())
 }
 
+/// Fetch the YouTube account's name and avatar and remember them.
+pub async fn refresh_account_info(core: &Core) -> Result<(), String> {
+    let cookie = core.yt.session_cookie().ok_or("not signed in")?;
+    let acc = crate::account::fetch(&core.http, &cookie).await.map_err(e)?;
+    core.db.set_setting("account_name", &acc.name).map_err(e)?;
+    match &acc.avatar {
+        Some(a) => core.db.set_setting("account_avatar", a).map_err(e)?,
+        None => core.db.del_setting("account_avatar").map_err(e)?,
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn refresh_account(core: St<'_>) -> Res<()> {
+    refresh_account_info(&core).await
+}
+
 #[tauri::command]
 pub async fn logout(core: St<'_>) -> Res<()> {
     core.yt.logout().await.map_err(e)?;
     core.db.del_setting("logged_in").map_err(e)?;
     core.db.del_setting("account_name").map_err(e)?;
+    core.db.del_setting("account_avatar").map_err(e)?;
     core.db.del_setting("remote_playlists").map_err(e)?;
     Ok(())
 }
@@ -378,11 +393,13 @@ pub async fn sync_account(core: St<'_>) -> Res<SyncResult> {
 
 #[tauri::command]
 pub fn remote_playlists(core: St) -> Res<Vec<PlaylistCard>> {
-    Ok(core
+    let all: Vec<PlaylistCard> = core
         .db
         .get_setting("remote_playlists")
         .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default())
+        .unwrap_or_default();
+    // "SE" (podcast "episodes for later") can't be opened by clients; hide it.
+    Ok(all.into_iter().filter(|p| p.id != "SE").collect())
 }
 
 #[tauri::command]

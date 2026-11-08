@@ -10,6 +10,7 @@ use rustypipe::model::{
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
+use futures_util::FutureExt;
 use std::pin::Pin;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -61,6 +62,9 @@ pub struct Yt {
     pub rp: RustyPipe,
     http: reqwest::Client,
     streams: Mutex<HashMap<(String, Codec), StreamInfo>>,
+    visitor: Mutex<Option<(String, Instant)>>,
+    /// Second handle on the encrypted session cache, to read the cookie for account info.
+    session: crate::secure_store::SecureStorage,
     pub ytdlp_dir: PathBuf,
 }
 
@@ -165,6 +169,7 @@ impl Yt {
     pub fn new(storage: PathBuf, ytdlp_dir: PathBuf, session_key: &crate::secrets::Key) -> Result<Self> {
         std::fs::create_dir_all(&storage)?;
         let secure = crate::secure_store::SecureStorage::new(storage.clone(), session_key);
+        let session = crate::secure_store::SecureStorage::new(storage.clone(), session_key);
         let mut b = RustyPipe::builder()
             .storage_dir(storage)
             .storage(Box::new(secure))
@@ -177,7 +182,7 @@ impl Yt {
         }
         let rp = b.build()?;
         let http = reqwest::Client::builder().timeout(Duration::from_secs(10)).build()?;
-        Ok(Self { rp, http, streams: Mutex::new(HashMap::new()), ytdlp_dir })
+        Ok(Self { rp, http, streams: Mutex::new(HashMap::new()), visitor: Mutex::new(None), session, ytdlp_dir })
     }
 
     pub async fn search(&self, q: &str) -> Result<SearchResults> {
@@ -315,7 +320,7 @@ impl Yt {
             qr = qr.authenticated();
         }
         let mut p = qr.music_playlist(id).await?;
-        p.tracks.extend_limit(&qr, 1000).await.ok();
+        p.tracks.extend_limit(&qr, 500).await.ok();
         Ok(PlaylistPage {
             cover: best_thumb(&p.thumbnail),
             author: p.channel.map(|c| c.name),
@@ -324,6 +329,67 @@ impl Yt {
             title: p.name,
             id: p.id,
         })
+    }
+
+    /// Plain YouTube playlist endpoint: works for private/personal playlists that the
+    /// YouTube Music parser in rustypipe currently chokes on.
+    pub async fn playlist_yt(&self, id: &str, authenticated: bool) -> Result<PlaylistPage> {
+        let mut qr = self.rp.query();
+        if authenticated {
+            qr = qr.authenticated();
+        }
+        let mut p = qr.playlist(id).await?;
+        p.videos.extend_limit(&qr, 500).await.ok();
+        Ok(PlaylistPage {
+            cover: best_thumb(&p.thumbnail),
+            author: p.channel.map(|c| c.name),
+            description: p.description.map(|d| d.to_plaintext()).filter(|s| !s.is_empty()),
+            tracks: p
+                .videos
+                .items
+                .into_iter()
+                .map(|v| Track {
+                    cover: best_thumb(&v.thumbnail),
+                    artists: v
+                        .channel
+                        .map(|c| vec![ArtistRef { id: Some(c.id), name: c.name.trim_end_matches(" - Topic").to_string() }])
+                        .unwrap_or_default(),
+                    album: None,
+                    duration: v.duration,
+                    title: v.name,
+                    id: v.id,
+                })
+                .collect(),
+            title: p.name,
+            id: p.id,
+        })
+    }
+
+    /// Load a playlist trying the fastest working route first, each attempt isolated from
+    /// rustypipe panics: YT Music without auth (public) → with auth → plain YouTube API.
+    pub async fn playlist_any(&self, id: &str, logged_in: bool) -> Result<PlaylistPage> {
+        async fn guarded<F: Future<Output = Result<PlaylistPage>>>(f: F) -> Result<PlaylistPage> {
+            std::panic::AssertUnwindSafe(f).catch_unwind().await.unwrap_or_else(|_| Err(anyhow!("rustypipe panicked")))
+        }
+        let mut last = match guarded(self.playlist(id, false)).await {
+            Ok(p) if !p.tracks.is_empty() => return Ok(p),
+            Ok(_) => anyhow!("empty playlist"),
+            Err(e) => e,
+        };
+        let attempts: Vec<(bool, bool)> = if logged_in {
+            vec![(true, true), (false, true), (false, false)] // (music api?, auth?)
+        } else {
+            vec![(false, false)]
+        };
+        for (music, auth) in attempts {
+            let r = if music { guarded(self.playlist(id, auth)).await } else { guarded(self.playlist_yt(id, auth)).await };
+            match r {
+                Ok(p) if !p.tracks.is_empty() => return Ok(p),
+                Ok(_) => {}
+                Err(e) => last = e,
+            }
+        }
+        Err(last)
     }
 
     pub async fn radio(&self, id: &str) -> Result<Vec<Track>> {
@@ -358,6 +424,12 @@ impl Yt {
         Ok(())
     }
 
+    /// Cookie header of the signed-in session (from the encrypted cache), if any.
+    pub fn session_cookie(&self) -> Option<String> {
+        use rustypipe::cache::CacheStorage;
+        crate::account::cookie_from_cache(&self.session.read()?)
+    }
+
     pub async fn logout(&self) -> Result<()> {
         self.rp.user_auth_remove_cookie().await.ok();
         Ok(())
@@ -376,8 +448,9 @@ impl Yt {
         p.extend_limit(&qr, 500).await.ok();
         Ok(p.items
             .into_iter()
-            // "LM" (liked music) is synced into local likes separately
-            .filter(|p| p.id != "LM")
+            // "LM" (liked music) is synced into local likes separately; "SE" (episodes for
+            // later) is a podcast queue YouTube doesn't let clients view.
+            .filter(|p| p.id != "LM" && p.id != "SE")
             .map(playlist_card)
             .collect())
     }
@@ -401,7 +474,15 @@ impl Yt {
         type Fut<'a> = Pin<Box<dyn Future<Output = Result<StreamInfo>> + Send + 'a>>;
         // Pure-Rust resolvers first (~0.1 s); yt-dlp (~3 s, desktop only) is the safety net
         // for when YouTube breaks them and yt-dlp has already caught up.
-        let native: Vec<Fut> = vec![Box::pin(self.stream_native(id, codec)), Box::pin(self.stream_rustypipe(id, codec))];
+        // rustypipe can panic internally (e.g. unwrap on a failed visitor-id fetch);
+        // catch that so it only counts as a failed resolver, not a dropped request.
+        let rp_guarded = async {
+            match std::panic::AssertUnwindSafe(self.stream_rustypipe(id, codec)).catch_unwind().await {
+                Ok(r) => r,
+                Err(_) => Err(anyhow!("rustypipe panicked")),
+            }
+        };
+        let native: Vec<Fut> = vec![Box::pin(self.stream_native(id, codec)), Box::pin(rp_guarded)];
         let resolved = match futures_util::future::select_ok(native).await {
             Ok((s, _rest)) => s,
             Err(e) if cfg!(desktop) => {
@@ -438,12 +519,46 @@ impl Yt {
         })
     }
 
+    /// YouTube visitor id for anonymous InnerTube requests, cached for 6 hours.
+    /// Fetched directly (rustypipe's own fetch panics when the request fails).
+    async fn visitor_id(&self) -> Option<String> {
+        if let Some((v, at)) = self.visitor.lock().unwrap().clone()
+            && at.elapsed() < Duration::from_secs(6 * 3600)
+        {
+            return Some(v);
+        }
+        let body = serde_json::json!({ "context": { "client": {
+            "clientName": "WEB", "clientVersion": "2.20250101.00.00", "hl": "en", "gl": "US" } } });
+        let resp: serde_json::Value = self
+            .http
+            .post("https://www.youtube.com/youtubei/v1/visitor_id?prettyPrint=false")
+            .header("X-YouTube-Client-Name", "1")
+            .header("X-YouTube-Client-Version", "2.20250101.00.00")
+            .header("Origin", "https://www.youtube.com")
+            .json(&body)
+            .send()
+            .await
+            .ok()?
+            .json()
+            .await
+            .ok()?;
+        let v = resp["responseContext"]["visitorData"].as_str()?.to_string();
+        *self.visitor.lock().unwrap() = Some((v.clone(), Instant::now()));
+        Some(v)
+    }
+
     /// Direct innertube `player` call with the visionOS client — the same trick yt-dlp uses.
     /// This client needs no JS player (no signature/n deobfuscation) and no PO token,
     /// so it works in pure Rust everywhere, including Android.
     async fn stream_native(&self, id: &str, codec: Codec) -> Result<StreamInfo> {
+        self.stream_native_as(id, codec, None).await
+    }
+
+    /// Same request signed as the logged-in user (cookies + SAPISIDHASH): needed for
+    /// age-restricted songs, which YouTube only serves to signed-in, age-verified accounts.
+    pub async fn stream_native_as(&self, id: &str, codec: Codec, cookie: Option<&str>) -> Result<StreamInfo> {
         const UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15";
-        let visitor = self.rp.query().get_visitor_data(false).await?;
+        let visitor = self.visitor_id().await.unwrap_or_default();
         let body = serde_json::json!({
             "context": { "client": {
                 "clientName": "VISIONOS",
@@ -460,14 +575,22 @@ impl Yt {
             "contentCheckOk": true,
             "racyCheckOk": true,
         });
-        let resp: serde_json::Value = self
+        let mut req = self
             .http
             .post("https://www.youtube.com/youtubei/v1/player?prettyPrint=false")
             .header("X-YouTube-Client-Name", "101")
             .header("X-YouTube-Client-Version", "1.02")
-            .header("X-Goog-Visitor-Id", &visitor)
             .header("Origin", "https://www.youtube.com")
-            .header(reqwest::header::USER_AGENT, UA)
+            .header(reqwest::header::USER_AGENT, UA);
+        if !visitor.is_empty() {
+            req = req.header("X-Goog-Visitor-Id", &visitor);
+        }
+        if let Some(c) = cookie
+            && let Some(auth) = crate::account::authorization(c, "https://www.youtube.com")
+        {
+            req = req.header("Cookie", c).header("Authorization", auth).header("X-Goog-AuthUser", "0");
+        }
+        let resp: serde_json::Value = req
             .json(&body)
             .send()
             .await?
@@ -480,7 +603,7 @@ impl Yt {
             let reason = resp["playabilityStatus"]["reason"].as_str().unwrap_or("unknown");
             if status == "LOGIN_REQUIRED" {
                 // a stale visitor id can trigger the bot check; get a fresh one next time
-                self.rp.query().remove_visitor_data(&visitor);
+                *self.visitor.lock().unwrap() = None;
             }
             bail!("visionOS: {status}: {reason}");
         }
@@ -518,8 +641,22 @@ impl Yt {
         })
     }
 
+    /// yt-dlp fallback. Signed in when a session exists: that's what makes age-restricted
+    /// (18+) songs play, which YouTube only serves to signed-in, age-verified accounts.
     async fn stream_ytdlp(&self, id: &str, codec: Codec) -> Result<StreamInfo> {
-        let url = ytdlp::get_url(&self.ytdlp_dir, id, codec.ytdlp_format()).await?;
+        let url = match self.session_cookie() {
+            Some(cookie) => {
+                let tmp = self.ytdlp_dir.parent().map(|p| p.join("tmp")).unwrap_or_else(std::env::temp_dir);
+                match ytdlp::get_url_signed_in(&self.ytdlp_dir, &tmp, id, codec.ytdlp_format(), &cookie).await {
+                    Ok(u) => u,
+                    Err(e) => {
+                        eprintln!("signed-in yt-dlp failed for {id}: {e:#}; trying anonymously");
+                        ytdlp::get_url(&self.ytdlp_dir, id, codec.ytdlp_format()).await?
+                    }
+                }
+            }
+            None => ytdlp::get_url(&self.ytdlp_dir, id, codec.ytdlp_format()).await?,
+        };
         let mime = if url.contains("mime=audio%2Fwebm") { "audio/webm" } else { "audio/mp4" };
         Ok(StreamInfo {
             url,
@@ -587,6 +724,42 @@ mod native_tests {
                 }
                 Err(e) => println!("{id}: ERROR {e:#}"),
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod debug_user_session {
+    /// Reproduce issues with the real signed-in session (read-only requests only).
+    /// Run: cargo test --lib debug_user_session -- --ignored --nocapture
+    #[tokio::test]
+    #[ignore]
+    async fn debug_user_session() {
+        let data = std::path::PathBuf::from(std::env::var("APPDATA").unwrap()).join("io.github.neverh8me.ytmusic");
+        let key = crate::secrets::get_or_create(&data, "session", None).unwrap();
+        let yt = super::Yt::new(data.join("rustypipe"), data.join("bin"), &key).unwrap();
+        let db = crate::db::Db::open(&data.join("library.db")).unwrap();
+        let cookie = yt.session_cookie();
+        println!("session cookie present: {}", cookie.is_some());
+        if let Some(c) = &cookie {
+            match crate::account::fetch(&reqwest::Client::new(), c).await {
+                Ok(a) => println!("account: name ok ({} chars), avatar: {}", a.name.chars().count(), a.avatar.is_some()),
+                Err(e) => println!("account: ERR {e:#}"),
+            }
+        }
+        let pls: Vec<crate::models::PlaylistCard> =
+            serde_json::from_str(&db.get_setting("remote_playlists").unwrap_or("[]".into())).unwrap();
+        for p in pls {
+            let t = std::time::Instant::now();
+            let r = yt.playlist_any(&p.id, true).await;
+            println!("playlist {:<12}: {} in {:?}", &p.id[..p.id.len().min(12)],
+                match &r { Ok(x) => format!("OK {} tracks", x.tracks.len()), Err(e) => format!("ERR {e:#}").chars().take(100).collect() },
+                t.elapsed());
+        }
+        let r = yt.search("так похуй").await.unwrap();
+        for t in r.tracks.iter().take(3) {
+            let s = crate::ytdlp::get_url_signed_in(&data.join("bin"), &std::env::temp_dir(), &t.id, "bestaudio[ext=m4a]/bestaudio", cookie.as_deref().unwrap()).await;
+            println!("stream {} [{}]: {}", t.title, t.id, match s { Ok(u) => format!("OK url len {}", u.len()), Err(e) => format!("ERR {e:#}").chars().take(300).collect() });
         }
     }
 }

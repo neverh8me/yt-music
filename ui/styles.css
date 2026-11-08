@@ -532,3 +532,8 @@ kbd { font: 600 11px/1 "Segoe UI", system-ui, sans-serif; background: var(--hove
   #player .now { cursor: pointer; }
 }
 @media (prefers-reduced-motion: reduce) { .np-sheet, .np-sheet.open { transition: none; } }
+
+/* account button: avatar + name */
+#account-btn.acc-in { display: inline-flex; align-items: center; gap: 8px; padding: 4px 14px 4px 4px; max-width: 220px; }
+#account-btn.acc-in span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acc-avatar { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; flex: none; }
