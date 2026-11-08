@@ -332,7 +332,7 @@ const views = {
         const cover = s.tracks.find((x) => x.cover)?.cover;
         const artists = [...new Set(s.tracks.flatMap((x) => (x.artists || []).map((a) => a.name)))].slice(0, 3).join(', ');
         return `<div class="mix-card" style="--mix:${MIX[i % MIX.length]}" data-act="play-list" data-list="${lid}" data-title="${esc(titleOf(s))}" tabindex="0" role="button">
-          ${cover ? `<img src="${esc(cover)}" alt="" data-onerr="remove">` : ''}<b>${esc(titleOf(s))}</b><small>${esc(artists)}</small></div>`;
+          ${cover ? `<img src="${esc(cover)}" alt="" data-onerr="remove">` : ''}<span class="mix-label">${esc(t('home.madeForYou'))}</span><b>${esc(titleOf(s))}</b><small>${esc(artists)}</small></div>`;
       }).join('')}</div></section>`;
     }
     // Quick picks: a swipeable grid of songs picked for you (first personal mix, else recent).

@@ -661,3 +661,54 @@ body.paused .stage-art { transform: scale(.94); filter: saturate(.85); }
 /* the cover itself carries the shadow, so the "breathing" scale on pause shows no frame */
 .stage-art-wrap { background: transparent; box-shadow: none; overflow: visible; }
 .stage-art { border-radius: var(--r-lg); box-shadow: 0 30px 60px -20px var(--shadow); }
+
+/* ============================================================ minimal pass (designer review)
+   One typeface (Geist), five sizes, generous spacing, and room for the artwork. */
+:root {
+  --mono: var(--font);
+  --fs-display: clamp(32px, 3.6vw, 44px); --fs-title: 24px; --fs-heading: 20px; --fs-body: 14px; --fs-caption: 12px; --fs-mono: 12px;
+}
+.mono, .sec-label, .hero-kind, .times, .tdur, .tnum, .qpill, .brand-sub, code, kbd, .band output, .band span, .side-tab, #sleep-left, .dl-mark.busy, .qbadge, .rail-head b {
+  font-family: var(--font); letter-spacing: 0; text-transform: none; }
+.mono, .sec-label, .hero-kind { font: 500 var(--fs-caption)/1.4 var(--font); color: var(--muted); }
+.brand-sub, #sleep-left, .dl-mark.busy, .qbadge, .rail-head b, .dock-link { font-size: var(--fs-caption); }
+.side-tab { font: 600 var(--fs-caption)/1 var(--font); }
+.chart .tnum .n { font: 600 var(--fs-heading)/1 var(--font); }
+.home-head h1, .page > h1, .search-h, #stage-title, .artist-hero h1, .hero h1 { font-size: var(--fs-display); letter-spacing: -.03em; }
+.hero h1.long, .tr-name, .sheet-head h2 { font-size: var(--fs-title); }
+.sec-head h2, .shelf > h2, .side-head h2, .top-tracks h2, .stage-artist, .ly-line { font-size: var(--fs-heading); }
+.sec-head h2, .shelf > h2 { font-weight: 700; letter-spacing: -.02em; }
+.ly-plain, .brand-name { font-size: var(--fs-body); }
+.brand-name { font-size: 16px; }
+
+/* space */
+.page { gap: 48px; max-width: 1280px; }
+.shelf { gap: var(--s4); }
+.grid { grid-template-columns: repeat(auto-fill, minmax(184px, 1fr)); gap: 32px 24px; }
+.carousel-track { grid-auto-columns: 200px; gap: 24px; }
+.card { gap: 10px; padding: 0; margin: 0; }
+.card:hover { background: none; }
+.card-art { border-radius: var(--r-sm); }
+.card-sub { margin-top: -6px; }
+
+/* "Made for you": the artwork is the card */
+.mixes { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(260px, 300px); grid-template-columns: none; gap: 24px; overflow-x: auto; scrollbar-width: none; padding-bottom: 4px; }
+.mixes::-webkit-scrollbar { display: none; }
+.mix-card { aspect-ratio: 1; min-height: 0; padding: var(--s5); border-radius: var(--r-md); background: var(--mix); justify-content: flex-end; }
+.mix-card img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: none; border-radius: 0; box-shadow: none; }
+.mix-card::after { content: ""; position: absolute; inset: 0; background: linear-gradient(transparent 40%, rgba(0, 0, 0, .75)); }
+.mix-card > * { position: relative; z-index: 1; }
+.mix-card .mix-label { font-size: var(--fs-caption); color: rgba(255, 255, 255, .8); font-weight: 500; }
+.mix-card b { font-size: var(--fs-title); max-width: none; }
+.mix-card small { max-width: none; }
+
+/* the player gets more room for the cover */
+.stage-art-wrap { width: min(58vh, 100%, 620px); }
+#stage { grid-template-columns: minmax(0, 640px) minmax(340px, 440px); }
+
+@media (max-width: 760px) {
+  .home-head h1, .page > h1, .search-h, #stage-title, .hero h1 { font-size: var(--fs-title); }
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 16px; }
+  .carousel-track { grid-auto-columns: 42%; gap: 16px; }
+  .mixes { grid-auto-columns: 78%; gap: 16px; }
+}
