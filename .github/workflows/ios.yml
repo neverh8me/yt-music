@@ -1,0 +1,86 @@
+# iOS test build: an UNSIGNED .ipa for side-loading on your own iPhone (Sideloadly / AltStore
+# re-sign it with a free Apple ID; it then runs for 7 days). No Apple certificate is needed.
+# Run it from the Actions tab ("iOS test build" → Run workflow); the .ipa is an artifact of the run.
+name: iOS test build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          targets: aarch64-apple-ios
+
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri -> target
+          key: ios
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      # The Xcode project calls `cargo tauri ...`; route that to the npm CLI instead of
+      # compiling tauri-cli (cargo passes the subcommand name "tauri" as $1).
+      - name: cargo-tauri shim
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          printf '#!/bin/sh\nshift\nexec npx --yes @tauri-apps/cli@2 "$@"\n' > "$HOME/.local/bin/cargo-tauri"
+          chmod +x "$HOME/.local/bin/cargo-tauri"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: xcodegen
+        run: brew install xcodegen
+
+      # The Xcode project isn't committed yet; generate it.
+      - name: Generate the Xcode project
+        working-directory: src-tauri
+        run: npx --yes @tauri-apps/cli@2 ios init --ci
+
+      # rquickjs-sys (via rustypipe) generates its iOS bindings with bindgen → Xcode's libclang.
+      # Signing is switched off for every target through an xcconfig that xcodebuild always
+      # reads (XCODE_XCCONFIG_FILE); the archive then holds an unsigned .app. Exporting a
+      # signed .ipa fails without a team, which is expected: the .ipa is packed by hand below.
+      - name: Build (unsigned)
+        working-directory: src-tauri
+        run: |
+          TOOLCHAIN="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain"
+          export LIBCLANG_PATH="$TOOLCHAIN/usr/lib"
+          export BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios="--target=arm64-apple-ios14.0 -isysroot $(xcrun --sdk iphoneos --show-sdk-path)"
+          cat > "$RUNNER_TEMP/nosign.xcconfig" <<'EOF'
+          CODE_SIGNING_ALLOWED = NO
+          CODE_SIGNING_REQUIRED = NO
+          CODE_SIGN_IDENTITY =
+          CODE_SIGN_ENTITLEMENTS =
+          DEVELOPMENT_TEAM =
+          EOF
+          export XCODE_XCCONFIG_FILE="$RUNNER_TEMP/nosign.xcconfig"
+          export APPLE_DEVELOPMENT_TEAM=0000000000
+          npx --yes @tauri-apps/cli@2 ios build --ci --target aarch64 2>&1 | tee "$RUNNER_TEMP/build.log" || true
+          APP="$(find gen/apple -path '*.xcarchive/Products/Applications/*.app' -type d -prune | head -1)"
+          if [ -z "$APP" ]; then
+            echo "::error::no .app in the archive (see the build log above)"
+            grep -nE "error:|error\[|failed" "$RUNNER_TEMP/build.log" | tail -40 || true
+            exit 1
+          fi
+          echo "App: $APP"
+          VERSION="$(node -p "require('./tauri.conf.json').version")"
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/"
+          (cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/YT.Music_${VERSION}_iOS-unsigned.ipa" Payload)
+          ls -la "$GITHUB_WORKSPACE"/*.ipa
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-unsigned-ipa
+          path: "*.ipa"
+          retention-days: 14

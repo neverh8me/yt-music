@@ -38,9 +38,9 @@ sha1 = "0.10"
 # Same version rustypipe already uses, so nothing extra is compiled.
 rquickjs = "0.9"
 
-# rquickjs-sys (pulled in by rustypipe) ships no prebuilt bindings for Android;
+# rquickjs-sys (pulled in by rustypipe) ships no prebuilt bindings for Android and iOS;
 # generate them with bindgen there. Needs libclang (LIBCLANG_PATH) at build time.
-[target.'cfg(target_os = "android")'.dependencies]
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 rquickjs-sys = { version = "0.9", features = ["bindgen"] }
 
 # OS secret store for keys: Windows Credential Manager / macOS Keychain.
