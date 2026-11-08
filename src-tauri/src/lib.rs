@@ -65,6 +65,14 @@ pub fn run() {
                     if let Err(e) = ytdlp::ensure(&bg.ytdlp_dir(), &bg.http).await {
                         eprintln!("yt-dlp setup failed: {e:#}");
                     }
+                    // Cache "path (version)" for Settings.
+                    if let Some(bin) = ytdlp::find(&bg.ytdlp_dir()) {
+                        let info = match ytdlp::version(&bin).await {
+                            Some(v) => format!("{} ({v})", bin.display()),
+                            None => bin.display().to_string(),
+                        };
+                        *bg.ytdlp_info.lock().unwrap() = Some(info);
+                    }
                 });
             }
             app.manage(core);

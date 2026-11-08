@@ -305,13 +305,13 @@ pub fn delete_download(core: St, id: String) -> Res<()> {
 // ------------------------------------------------------------- settings & account
 #[tauri::command]
 pub async fn get_settings(core: St<'_>) -> Res<Settings> {
-    let ytdlp = match ytdlp::find(&core.ytdlp_dir()) {
-        Some(bin) => Some(ytdlp::version(&bin).await.map_or_else(
-            || bin.display().to_string(),
-            |v| format!("{} ({v})", bin.display()),
-        )),
-        None => None,
-    };
+    // Cached by the startup task; fall back to just the path (no slow process spawn here).
+    let ytdlp = core
+        .ytdlp_info
+        .lock()
+        .unwrap()
+        .clone()
+        .or_else(|| ytdlp::find(&core.ytdlp_dir()).map(|b| b.display().to_string()));
     Ok(Settings {
         download_dir: core.download_dir().to_string_lossy().into_owned(),
         logged_in: core.db.get_setting("logged_in").is_some(),
@@ -387,8 +387,11 @@ pub fn remote_playlists(core: St) -> Res<Vec<PlaylistCard>> {
 
 #[tauri::command]
 pub async fn install_ytdlp(core: St<'_>) -> Res<String> {
-    ytdlp::install(&core.ytdlp_dir(), &core.http)
-        .await
-        .map(|p| p.display().to_string())
-        .map_err(e)
+    let bin = ytdlp::install(&core.ytdlp_dir(), &core.http).await.map_err(e)?;
+    let info = match ytdlp::version(&bin).await {
+        Some(v) => format!("{} ({v})", bin.display()),
+        None => bin.display().to_string(),
+    };
+    *core.ytdlp_info.lock().unwrap() = Some(info.clone());
+    Ok(info)
 }

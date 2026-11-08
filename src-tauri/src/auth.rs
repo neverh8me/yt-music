@@ -30,28 +30,80 @@ fn done(app: &AppHandle, ok: bool, error: Option<String>) {
     }
 }
 
-/// Read YouTube cookies from the login window and log rustypipe in with them.
+/// Only one cookie poller at a time (page loads on music.youtube.com can fire repeatedly).
+static POLLING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Diagnostics for sign-in problems: steps and cookie *names* only, never values.
+fn log(core: &Core, msg: &str) {
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(core.data_dir.join("login.log")) {
+        let _ = writeln!(f, "[{}] {msg}", crate::db::now());
+    }
+}
+
+/// Session cookies for YouTube, from the login window's cookie store.
+async fn youtube_cookies(app: &AppHandle) -> Result<Vec<(String, String)>, String> {
+    let w = app.get_webview_window(LABEL).ok_or("login window closed")?;
+    // WebView2 deadlocks if cookies are read on an event-handler thread; use a worker thread.
+    let all = tauri::async_runtime::spawn_blocking(move || w.cookies())
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    Ok(all
+        .into_iter()
+        .filter(|c| {
+            let d = c.domain().unwrap_or("").trim_start_matches('.');
+            d == "youtube.com" || d.ends_with(".youtube.com")
+        })
+        .map(|c| (c.name().to_string(), c.value().to_string()))
+        .collect())
+}
+
+/// After the window reaches music.youtube.com, poll its cookies until the signed-in
+/// session (SAPISID) shows up — it can arrive a moment after the page "finishes"
+/// loading — then log rustypipe in with them.
 async fn capture(app: AppHandle, core: Arc<Core>) {
-    let Some(w) = app.get_webview_window(LABEL) else { return };
-    let url = Url::parse("https://music.youtube.com/").expect("static url");
-    // Must not run on the event-handler thread (WebView2 deadlocks); we're in a task.
-    let cookies = match tauri::async_runtime::spawn_blocking(move || w.cookies_for_url(url)).await {
-        Ok(Ok(c)) => c,
-        Ok(Err(e)) => return done(&app, false, Some(format!("{e}"))),
-        Err(e) => return done(&app, false, Some(format!("{e}"))),
-    };
-    // SAPISID is what authenticated YouTube requests are signed with.
-    if !cookies.iter().any(|c| c.name() == "SAPISID" || c.name() == "__Secure-3PAPISID") {
-        return; // not signed in yet (e.g. landed on music.youtube.com as a guest) — keep waiting
+    use std::sync::atomic::Ordering;
+    if POLLING.swap(true, Ordering::SeqCst) {
+        return;
     }
-    let header = cookies.iter().map(|c| format!("{}={}", c.name(), c.value())).collect::<Vec<_>>().join("; ");
-    match core.yt.login(&header).await {
-        Ok(()) => {
-            let _ = core.db.set_setting("logged_in", "1");
-            done(&app, true, None);
+    log(&core, "sign-in window open, waiting for YouTube session cookies");
+    let mut last_names = String::new();
+    for _ in 0..400 {
+        // ~10 minutes; stops earlier if the window is closed
+        let cookies = match youtube_cookies(&app).await {
+            Ok(c) => c,
+            Err(e) => {
+                log(&core, &format!("stop: {e}"));
+                break;
+            }
+        };
+        let names = cookies.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>().join(",");
+        if names != last_names {
+            log(&core, &format!("cookie names: {names}"));
+            last_names = names;
         }
-        Err(e) => done(&app, false, Some(format!("{e:#}"))),
+        // SAPISID is what authenticated YouTube requests are signed with.
+        if cookies.iter().any(|(n, _)| n == "SAPISID" || n == "__Secure-3PAPISID") {
+            let header = cookies.iter().map(|(n, v)| format!("{n}={v}")).collect::<Vec<_>>().join("; ");
+            match core.yt.login(&header).await {
+                Ok(()) => {
+                    log(&core, "signed in");
+                    let _ = core.db.set_setting("logged_in", "1");
+                    done(&app, true, None);
+                }
+                Err(e) => {
+                    log(&core, &format!("rustypipe rejected the session: {e:#}"));
+                    done(&app, false, Some(format!("{e:#}")));
+                }
+            }
+            POLLING.store(false, Ordering::SeqCst);
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
     }
+    log(&core, "gave up waiting for session cookies");
+    POLLING.store(false, Ordering::SeqCst);
 }
 
 #[tauri::command]
@@ -61,6 +113,7 @@ pub async fn google_login(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<
         return Ok(());
     }
     let core = core.inner().clone();
+    let poll_core = core.clone();
     let handler_app = app.clone();
     let url = Url::parse(START).map_err(|e| e.to_string())?;
     let builder = WebviewWindowBuilder::new(&app, LABEL, WebviewUrl::External(url));
@@ -92,5 +145,8 @@ pub async fn google_login(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<
             let _ = cancel_app.emit("google-login-closed", ());
         }
     });
+    // Watch for the session from the start, not only on page-load events
+    // (music.youtube.com is a single-page app; the session may appear without a reload).
+    tauri::async_runtime::spawn(capture(app.clone(), poll_core));
     Ok(())
 }

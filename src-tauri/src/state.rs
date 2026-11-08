@@ -23,6 +23,9 @@ pub struct Core {
     /// use the local server (e.g. to pull decrypted offline tracks).
     pub stream_token: String,
     pub sleep: Mutex<SleepTimer>,
+    /// "path (version)" of yt-dlp, filled in the background at startup: running
+    /// `yt-dlp --version` takes seconds, so Settings must never wait for it.
+    pub ytdlp_info: Mutex<Option<String>>,
     pub discord: crate::integrations::Discord,
     vault_key: Mutex<Option<vault::Key>>,
 }
@@ -60,6 +63,7 @@ impl Core {
             queue: tokio::sync::Mutex::new(queue),
             stream_token: random_token(),
             sleep: Mutex::new(SleepTimer::default()),
+            ytdlp_info: Mutex::new(None),
             discord: crate::integrations::Discord::start(),
             vault_key: Mutex::new(None),
         }
