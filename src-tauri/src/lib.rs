@@ -42,6 +42,12 @@ pub fn run() {
         .plugin(integrations::hotkeys_plugin());
     builder
         .setup(|app| {
+            // iOS: the window is made here (tauri.ios.conf.json has none) so it can carry Mobile
+            // Safari's user agent for this iOS version: Google's sign-in opens in it (auth.rs).
+            #[cfg(target_os = "ios")]
+            tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("index.html".into()))
+                .user_agent(&auth::ios::user_agent())
+                .build()?;
             // YTUBEM_DATA_DIR isolates automated test runs from the user's real library.
             let data_dir = match std::env::var_os("YTUBEM_DATA_DIR") {
                 Some(d) => std::path::PathBuf::from(d),

@@ -390,7 +390,7 @@ pub async fn get_settings(core: St<'_>) -> Res<Settings> {
             Codec::Aac => "aac".into(),
             Codec::Opus => "opus".into(),
         },
-        google_login_supported: cfg!(desktop) || cfg!(target_os = "android"),
+        google_login_supported: true, // desktop window, Android activity, iOS in the main view
         chart_region: chart_region(&core),
         detected_region: detected_region(),
         notify_tracks: crate::integrations::enabled(&core, "notify_tracks"),

@@ -37,6 +37,8 @@ const artistNames = (artists = []) => artists.map((a) => a.name).join(', ');
 const errText = (e) => (typeof e === 'string' ? e : e?.message || JSON.stringify(e));
 const debounce = (fn, ms) => { let h; return (...a) => { clearTimeout(h); h = setTimeout(() => fn(...a), ms); }; };
 const isPhone = () => matchMedia('(max-width: 760px)').matches;
+/** Android / iOS app: no yt-dlp, 18+ songs go through the signed-in stream and the JS solver. */
+const MOBILE_APP = !!window.AndroidMedia || /iPhone|iPad|iPod/.test(navigator.userAgent);
 /** The player alone on screen (narrow window, phone): Up next / Lyrics open as a sheet over it. */
 const stageCompact = () => matchMedia('(max-width: 1199px)').matches;
 /** googleusercontent covers come at 544 px; list rows only need a small one (less to load and decode). */
@@ -1286,7 +1288,7 @@ function updateNowPlaying() {
     badge.innerHTML = q.offline ? `${icon('lock')}${esc(t('qp.offline'))}` : '';
     badge.title = q.offline ? t('quality.offline') : '';
   }).catch((e) => {
-    if (window.AndroidMedia && /LOGIN_REQUIRED|age|Sign in/i.test(errText(e)) && player.current?.id === cur.id) {
+    if (MOBILE_APP && /LOGIN_REQUIRED|age|Sign in/i.test(errText(e)) && player.current?.id === cur.id) {
       toast(t(state.settings.logged_in ? 'toast.ageAndroid' : 'toast.ageSignIn'), 'err');
     }
   });
@@ -1719,7 +1721,7 @@ window.__androidLogin = async (cookie) => {
   api.sleepState().then(showSleep).catch(() => {});
   // Signed in before account info existed (or the avatar changed): fetch it once per start.
   // Android (no yt-dlp): prepare YouTube's player for 18+ songs before the first one is played.
-  if (state.settings.logged_in && window.AndroidMedia) setTimeout(() => api.warmSolver().catch(() => {}), 5000);
+  if (state.settings.logged_in && MOBILE_APP) setTimeout(() => api.warmSolver().catch(() => {}), 5000);
   if (state.settings.logged_in) {
     api.refreshAccount()
       .then(async () => { state.settings = await api.settings(); renderAccount(); })

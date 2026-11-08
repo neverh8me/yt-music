@@ -140,6 +140,14 @@ async fn retry_signin(app: AppHandle) {
 
 #[tauri::command]
 pub async fn google_login(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    return ios::login(app, core.inner().clone());
+    #[cfg(not(target_os = "ios"))]
+    desktop_login(app, core).await
+}
+
+#[cfg(not(target_os = "ios"))]
+async fn desktop_login(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<(), String> {
     if let Some(w) = app.get_webview_window(LABEL) {
         let _ = w.set_focus();
         return Ok(());
@@ -190,4 +198,115 @@ pub async fn google_login(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<
     // (music.youtube.com is a single-page app; the session may appear without a reload).
     tauri::async_runtime::spawn(capture(app.clone(), poll_core));
     Ok(())
+}
+
+/// iOS: there's only the one window, so Google's sign-in page opens in it. A "✕" button
+/// takes you back without signing in; once YouTube has a signed-in session its cookies go
+/// to rustypipe, they're removed from the webview again, and the app comes back.
+#[cfg(target_os = "ios")]
+pub mod ios {
+    use super::{POLLING, log};
+    use crate::state::Core;
+    use std::sync::Arc;
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+    use tauri::{AppHandle, Emitter, Manager, Url};
+
+    const START: &str = "https://accounts.google.com/ServiceLogin?service=youtube&uilel=3&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26app%3Ddesktop%26next%3Dhttps%253A%252F%252Fmusic.youtube.com%252F";
+    /// A way back to the app from Google's pages (they have no back button).
+    const CANCEL_JS: &str = r#"(function(){if(document.getElementById('ytm-x')||!document.body)return;var b=document.createElement('a');b.id='ytm-x';b.textContent='✕  YT Music';b.href='#ytm-cancel';b.style.cssText='position:fixed;z-index:2147483647;right:12px;top:calc(env(safe-area-inset-top,0px) + 10px);padding:9px 16px;border-radius:20px;background:#ff2e4d;color:#fff;font:600 15px -apple-system,system-ui,sans-serif;text-decoration:none;box-shadow:0 6px 20px rgba(0,0,0,.3)';document.body.appendChild(b);})();"#;
+
+    /// Mobile Safari's UA for this iOS version. Google refuses sign-in in web views it can
+    /// spot, and when the claimed Safari version doesn't match the engine.
+    pub fn user_agent() -> String {
+        let v = version().unwrap_or_else(|| "18.0".into());
+        format!(
+            "Mozilla/5.0 (iPhone; CPU iPhone OS {} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/{v} Mobile/15E148 Safari/604.1",
+            v.replace('.', "_")
+        )
+    }
+
+    /// "18.5" from `kern.osproductversion` (e.g. "18.5.1").
+    fn version() -> Option<String> {
+        let mut buf = [0u8; 32];
+        let mut len = buf.len();
+        // SAFETY: NUL-terminated name; buf/len describe a writable buffer; no new value is set.
+        let r = unsafe {
+            libc::sysctlbyname(c"kern.osproductversion".as_ptr(), buf.as_mut_ptr().cast(), &mut len, std::ptr::null_mut(), 0)
+        };
+        if r != 0 || len == 0 {
+            return None;
+        }
+        let s = std::str::from_utf8(&buf[..len.min(buf.len())]).ok()?.trim_end_matches('\0').to_string();
+        let mut parts = s.split('.');
+        let major = parts.next().filter(|m| !m.is_empty())?;
+        Some(format!("{major}.{}", parts.next().unwrap_or("0")))
+    }
+
+    pub fn login(app: AppHandle, core: Arc<Core>) -> Result<(), String> {
+        let w = app.get_webview_window("main").ok_or("main window missing")?;
+        if POLLING.swap(true, Ordering::SeqCst) {
+            return Ok(());
+        }
+        let back = match w.url() {
+            Ok(u) => u,
+            Err(e) => {
+                POLLING.store(false, Ordering::SeqCst);
+                return Err(e.to_string());
+            }
+        };
+        if let Err(e) = Url::parse(START).map_err(|e| e.to_string()).and_then(|u| w.navigate(u).map_err(|e| e.to_string())) {
+            POLLING.store(false, Ordering::SeqCst);
+            return Err(e);
+        }
+        log(&core, "iOS sign-in: Google page open");
+        tauri::async_runtime::spawn(async move {
+            let yt = Url::parse("https://www.youtube.com/").expect("static url");
+            let mut ok = false;
+            for _ in 0..600 {
+                // ~15 minutes at most
+                tokio::time::sleep(Duration::from_millis(1500)).await;
+                let _ = w.eval(CANCEL_JS);
+                if w.url().map(|u| u.fragment() == Some("ytm-cancel")).unwrap_or(false) {
+                    log(&core, "iOS sign-in: cancelled");
+                    break;
+                }
+                let (w2, u2) = (w.clone(), yt.clone());
+                let cookies = match tauri::async_runtime::spawn_blocking(move || w2.cookies_for_url(u2)).await {
+                    Ok(Ok(c)) => c,
+                    _ => continue,
+                };
+                if !cookies.iter().any(|c| c.name() == "SAPISID" || c.name() == "__Secure-3PAPISID") {
+                    continue;
+                }
+                let header = cookies.iter().map(|c| format!("{}={}", c.name(), c.value())).collect::<Vec<_>>().join("; ");
+                match core.yt.login(&header).await {
+                    Ok(()) => {
+                        let _ = core.db.set_setting("logged_in", "1");
+                        if let Err(e) = crate::commands::refresh_account_info(&core).await {
+                            log(&core, &format!("account info unavailable: {e}"));
+                        }
+                        log(&core, "iOS sign-in: signed in");
+                        ok = true;
+                    }
+                    Err(e) => log(&core, &format!("rustypipe rejected the session: {e:#}")),
+                }
+                break;
+            }
+            // Only rustypipe keeps the session: drop Google's and YouTube's cookies from the
+            // web view (not everything: the app's own storage holds your settings).
+            for url in ["https://www.youtube.com/", "https://music.youtube.com/", "https://accounts.google.com/", "https://www.google.com/"] {
+                let (w2, u) = (w.clone(), Url::parse(url).expect("static url"));
+                if let Ok(Ok(list)) = tauri::async_runtime::spawn_blocking(move || w2.cookies_for_url(u)).await {
+                    for c in list {
+                        let _ = w.delete_cookie(c);
+                    }
+                }
+            }
+            let _ = w.navigate(back);
+            let _ = app.emit("google-login", super::LoginResult { ok, error: None });
+            POLLING.store(false, Ordering::SeqCst);
+        });
+        Ok(())
+    }
 }
