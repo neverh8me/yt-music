@@ -101,7 +101,7 @@ async fn fetch_chunk(http: &reqwest::Client, url: &str, from: u64, to: u64) -> R
     }
 }
 
-async fn proxy(core: &Core, info: &StreamInfo, range: Option<&str>) -> Result<Response, Upstream> {
+async fn proxy(core: &Arc<Core>, id: &str, info: &StreamInfo, range: Option<&str>) -> Result<Response, Upstream> {
     let total = total_size(core, info).await?;
     let (start, end) = match range {
         Some(r) => match parse_range(r, total) {
@@ -121,33 +121,53 @@ async fn proxy(core: &Core, info: &StreamInfo, range: Option<&str>) -> Result<Re
     let first_end = end.min(start + CHUNK - 1);
     let first = fetch_chunk(&core.http, &info.url, start, first_end).await?;
 
-    let http = core.http.clone();
-    let url = info.url.clone();
-    // state: (current response, next byte offset to request)
-    let body = futures_util::stream::unfold((Some(first), first_end + 1), move |(mut cur, mut next)| {
-        let http = http.clone();
-        let url = url.clone();
+    // Each next chunk asks for the track's current URL: the fast one it started with, or the
+    // yt-dlp one that replaced it meanwhile (same format, so the bytes line up). If a chunk
+    // fails, the URL is dropped, resolved again and the stream goes on from the same byte.
+    let core = core.clone();
+    let id = id.to_string();
+    let itag = crate::yt::url_param(&info.url, "itag");
+    let first_url = info.url.clone();
+    // state: (current response, start of the next chunk, next byte to hand out, failures)
+    let body = futures_util::stream::unfold((Some(first), first_end + 1, start, 0u8), move |(mut cur, mut next, mut pos, mut fails)| {
+        let (core, id, itag, first_url) = (core.clone(), id.clone(), itag.clone(), first_url.clone());
         async move {
             loop {
                 if let Some(resp) = cur.as_mut() {
                     match resp.chunk().await {
-                        Ok(Some(bytes)) => return Some((Ok(bytes), (cur, next))),
+                        Ok(Some(bytes)) => {
+                            pos += bytes.len() as u64;
+                            return Some((Ok(bytes), (cur, next, pos, fails)));
+                        }
                         Ok(None) => {} // this chunk is done; fetch the next one below
-                        Err(e) => return Some((Err(std::io::Error::other(e)), (None, end + 1))),
+                        Err(_) => {
+                            // broke mid-chunk: ask again from the first byte not handed out yet
+                            cur = None;
+                            next = pos;
+                            fails += 1;
+                        }
                     }
                 }
                 if next > end {
                     return None;
                 }
+                if fails > 3 {
+                    let err = std::io::Error::other("upstream chunk failed");
+                    return Some((Err(err), (None, end + 1, pos, fails)));
+                }
+                let url = match core.yt.stream(&id, Codec::Aac).await {
+                    Ok(i) if itag.is_none() || crate::yt::url_param(&i.url, "itag") == itag => i.url,
+                    _ => first_url.clone(),
+                };
                 let to = end.min(next + CHUNK - 1);
-                match fetch_chunk(&http, &url, next, to).await {
+                match fetch_chunk(&core.http, &url, next, to).await {
                     Ok(r) => {
                         cur = Some(r);
                         next = to + 1;
                     }
                     Err(_) => {
-                        let err = std::io::Error::other("upstream chunk failed");
-                        return Some((Err(err), (None, end + 1)));
+                        fails += 1;
+                        core.yt.invalidate(&id);
                     }
                 }
             }
@@ -294,7 +314,12 @@ async fn stream_inner(State(core): State<Arc<Core>>, Path((token, id)): Path<(St
                 break;
             }
         };
-        match proxy(&core, &info, range.as_deref()).await {
+        // Playing from a fast URL: get the sure (yt-dlp) URL for the same format meanwhile.
+        if core.yt.take_backup_job(&id) {
+            let (c, id) = (core.clone(), id.clone());
+            tokio::spawn(async move { c.yt.backup(&id, Codec::Aac).await });
+        }
+        match proxy(&core, &id, &info, range.as_deref()).await {
             Ok(r) => return r,
             Err(Upstream::Retry) => {
                 last_err = "upstream refused the stream URL".into();

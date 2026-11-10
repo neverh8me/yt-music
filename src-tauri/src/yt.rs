@@ -72,6 +72,11 @@ pub struct Yt {
     inflight: Mutex<HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,
     /// Tracks whose fast (built-in) stream URL died while playing: resolve these with yt-dlp.
     distrust: Mutex<std::collections::HashSet<String>>,
+    /// Tracks resolved by the fast path that have no yt-dlp backup yet (see backup()).
+    fast: Mutex<std::collections::HashSet<String>>,
+    /// Format (itag) each track started playing in: a replacement URL must be the same file,
+    /// or the bytes already played wouldn't line up with the rest.
+    itags: Mutex<HashMap<String, String>>,
     /// YouTube player challenge solver (signed-in playback without yt-dlp, e.g. Android).
     solver: crate::jsplayer::Solver,
 }
@@ -209,6 +214,8 @@ impl Yt {
             ytdlp_slots: tokio::sync::Semaphore::new(3),
             inflight: Mutex::new(HashMap::new()),
             distrust: Mutex::new(std::collections::HashSet::new()),
+            fast: Mutex::new(std::collections::HashSet::new()),
+            itags: Mutex::new(HashMap::new()),
             solver,
         })
     }
@@ -509,12 +516,13 @@ impl Yt {
     /// Resolve an audio URL in the requested codec (falls back to whatever exists),
     /// cached until shortly before it expires.
     ///
-    /// Speed first: the built-in resolvers answer in well under a second, so they go first
-    /// everywhere: the anonymous clients, then (sign-in-only songs such as 18+) a signed
-    /// request as your account with the player challenges solved in the app. On desktop
-    /// yt-dlp is the safety net: it takes over when the fast path fails, and for a track
-    /// whose fast URL died while playing (see invalidate). The next tracks are resolved
-    /// ahead of time, so skipping doesn't wait.
+    /// Fast start, sure finish. The built-in resolvers answer in about a second, so a track
+    /// starts from them: the anonymous clients, then (sign-in-only songs such as 18+) a signed
+    /// request as your account with the player challenges solved in the app. Their URLs can
+    /// die mid-song, so on desktop the track that is actually playing also gets a yt-dlp URL
+    /// for the *same* format in the background (see backup()), which quietly replaces the
+    /// fast one; and if the fast URL dies first, yt-dlp resolves that same format, so the
+    /// song goes on from where it was. yt-dlp is also the fallback when the fast path fails.
     pub async fn stream(&self, id: &str, codec: Codec) -> Result<StreamInfo> {
         let key = (id.to_string(), codec);
         if let Some(s) = self.cached(&key) {
@@ -537,7 +545,8 @@ impl Yt {
             }
         };
         let resolved = if sure_first {
-            match self.stream_ytdlp(id, codec).await {
+            let itag = self.itags.lock().unwrap().get(id).cloned();
+            match self.stream_ytdlp(id, codec, itag.as_deref()).await {
                 Ok(s) => s,
                 Err(e) => {
                     eprintln!("yt-dlp failed for {id}: {e:#}; using the built-in clients");
@@ -546,10 +555,24 @@ impl Yt {
             }
         } else {
             match fast.await {
-                Ok(s) => s,
+                Ok(s) => {
+                    if ytdlp && let Some(itag) = url_param(&s.url, "itag") {
+                        let mut f = self.fast.lock().unwrap();
+                        let mut t = self.itags.lock().unwrap();
+                        if f.len() > 500 {
+                            f.clear();
+                        }
+                        if t.len() > 500 {
+                            t.clear();
+                        }
+                        f.insert(id.to_string());
+                        t.insert(id.to_string(), itag);
+                    }
+                    s
+                }
                 Err(e) if ytdlp => {
                     eprintln!("built-in clients failed for {id}: {e:#}; using yt-dlp");
-                    self.stream_ytdlp(id, codec).await.context("couldn't get an audio stream")?
+                    self.stream_ytdlp(id, codec, None).await.context("couldn't get an audio stream")?
                 }
                 Err(e) => return Err(e.context("couldn't get an audio stream")),
             }
@@ -863,20 +886,55 @@ impl Yt {
 
     /// yt-dlp fallback. Signed in when a session exists: that's what makes age-restricted
     /// (18+) songs play, which YouTube only serves to signed-in, age-verified accounts.
-    async fn stream_ytdlp(&self, id: &str, codec: Codec) -> Result<StreamInfo> {
+    /// True once per fast-resolved track: the caller (the stream server, i.e. the track is
+    /// really being played) should then run backup() in the background.
+    pub fn take_backup_job(&self, id: &str) -> bool {
+        self.fast.lock().unwrap().remove(id)
+    }
+
+    /// Get a yt-dlp URL for the same format as the fast URL in the cache and put it in its
+    /// place: later requests for this track (seeks, the next chunk after a hiccup) then use
+    /// the sure URL. Different format → leave things alone (the bytes wouldn't line up).
+    pub async fn backup(&self, id: &str, codec: Codec) {
+        let key = (id.to_string(), codec);
+        let Some(cur) = self.cached(&key) else { return };
+        let Some(itag) = url_param(&cur.url, "itag") else { return };
+        match self.stream_ytdlp(id, codec, Some(&itag)).await {
+            Ok(mut s) if url_param(&s.url, "itag").as_deref() == Some(itag.as_str()) => {
+                s.size = cur.size;
+                s.kbps = cur.kbps;
+                s.mime = cur.mime.clone();
+                s.codec = cur.codec;
+                let mut m = self.streams.lock().unwrap();
+                if m.get(&key).is_some_and(|c| c.url == cur.url) {
+                    m.insert(key, s);
+                }
+            }
+            Ok(_) => {}
+            Err(e) => eprintln!("yt-dlp backup for {id} failed: {e:#}"),
+        }
+    }
+
+    /// `itag`: ask for exactly this format first (to continue a track that already plays).
+    async fn stream_ytdlp(&self, id: &str, codec: Codec, itag: Option<&str>) -> Result<StreamInfo> {
+        let format = match itag {
+            Some(i) => format!("{i}/{}", codec.ytdlp_format()),
+            None => codec.ytdlp_format().to_string(),
+        };
+        let format = format.as_str();
         let _slot = self.ytdlp_slots.acquire().await?;
         let url = match self.session_cookie() {
             Some(cookie) => {
                 let tmp = self.ytdlp_dir.parent().map(|p| p.join("tmp")).unwrap_or_else(std::env::temp_dir);
-                match ytdlp::get_url_signed_in(&self.ytdlp_dir, &tmp, id, codec.ytdlp_format(), &cookie).await {
+                match ytdlp::get_url_signed_in(&self.ytdlp_dir, &tmp, id, format, &cookie).await {
                     Ok(u) => u,
                     Err(e) => {
                         eprintln!("signed-in yt-dlp failed for {id}: {e:#}; trying anonymously");
-                        ytdlp::get_url(&self.ytdlp_dir, id, codec.ytdlp_format()).await?
+                        ytdlp::get_url(&self.ytdlp_dir, id, format).await?
                     }
                 }
             }
-            None => ytdlp::get_url(&self.ytdlp_dir, id, codec.ytdlp_format()).await?,
+            None => ytdlp::get_url(&self.ytdlp_dir, id, format).await?,
         };
         let expires = Instant::now() + url_ttl(&url);
         let mime = if url.contains("mime=audio%2Fwebm") { "audio/webm" } else { "audio/mp4" };
@@ -889,6 +947,11 @@ impl Yt {
             expires,
         })
     }
+}
+
+/// A query parameter of a stream URL (e.g. "itag").
+pub fn url_param(url: &str, name: &str) -> Option<String> {
+    url.split(['?', '&']).find_map(|p| p.strip_prefix(name)?.strip_prefix('=')).map(str::to_string)
 }
 
 /// How long a googlevideo URL stays valid: its `expire=` timestamp minus a safety margin.
