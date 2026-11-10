@@ -92,7 +92,6 @@ async function refreshRemote() {
 const mode = () => document.body.dataset.mode;
 function setMode(m) {
   document.body.dataset.mode = m;
-  $('#nav-back').hidden = m !== 'browse';
   if (m === 'browse') ensureBackEntry();
   markRail();
 }
@@ -189,6 +188,7 @@ async function render() {
     el.innerHTML = (LAYERS.includes(entry.view) ? `<div class="page layer-head">${layerBar(entry.view)}</div>` : '') + html;
     $('#main').scrollTop = entry.scroll || 0;
     applyPageColor(token);
+    if (['liked', 'local-playlist', 'playlist', 'album'].includes(entry.view) && autoDl.has(dlKey(pageCtx))) downloadTracks(pageTracks, true);
     afterRender[entry.view]?.(entry.params);
   } catch (e) {
     clearTimeout(sk);
@@ -280,8 +280,11 @@ function collectionHeader({ cover, kind, title, meta, round = false, actions = '
 
 const playBtn = (act, extra = '') => `<button class="play-big" data-act="${act}" ${extra} title="${esc(t('act.play'))}" aria-label="${esc(t('act.play'))}">${icon('play')}</button>`;
 const actBtn = (act, ic, title, extra = '') => `<button class="pill-btn" data-act="${act}" ${extra}>${icon(ic)}${esc(title)}</button>`;
-const collectionActions = () => playBtn('play-page') + actBtn('shuffle-page', 'shuffle', t('act.shuffle'))
-  + actBtn('download-page', 'download', t('act.downloadAll'));
+const collectionActions = () => {
+  const on = autoDl.has(dlKey(pageCtx));
+  return playBtn('play-page') + actBtn('shuffle-page', 'shuffle', t('act.shuffle'))
+    + `<button class="pill-btn dl-toggle ${on ? 'on' : ''}" data-act="download-page" aria-pressed="${on}">${dlToggleInner(on)}</button>`;
+};
 
 // cached data of the currently rendered collection page, used by action buttons
 let pageTracks = [];
@@ -619,6 +622,7 @@ function renderDock() {
 /** Highlight the rail entry of the page that is open. */
 function markRail() {
   const e = mode() === 'browse' ? nav.stack[nav.pos] : null;
+  document.body.dataset.view = e ? e.view : 'stage';
   const top = e && (['library', 'history', 'downloads', 'liked', 'local-playlist', 'playlist'].includes(e.view) ? 'library' : e.view);
   $$('.rail-link[data-nav], .dock-link[data-nav]').forEach((b) => b.classList.toggle('active', !!e && b.dataset.nav === top));
   $$('.rail-item').forEach((b) => {
@@ -817,6 +821,7 @@ async function toggleLike(x) {
   try {
     await api.setLiked(x, liked);
     liked ? state.liked.add(x.id) : state.liked.delete(x.id);
+    if (liked && autoDl.has('liked')) downloadTracks([x], true);
     $$(`.trow[data-tid="${CSS.escape(x.id)}"] .like`).forEach((b) => {
       b.classList.toggle('on', liked); b.setAttribute('aria-pressed', liked); b.innerHTML = icon(liked ? 'heart-fill' : 'heart');
     });
@@ -826,11 +831,51 @@ async function toggleLike(x) {
   } catch (e) { toast(errText(e), 'err'); }
 }
 
-async function downloadTracks(tracks) {
-  const todo = tracks.filter((x) => !state.downloaded.has(x.id));
-  if (!todo.length) return toast(t('toast.alreadyDl'));
+/** Downloading needs an account, as in YouTube Music. Says so and offers sign-in. */
+function needSignIn() {
+  if (state.settings.logged_in) return false;
+  toast(t('toast.dlSignIn'), 'err');
+  accountMenu();
+  return true;
+}
+/** `quiet`: automatic downloads (no "already downloaded" / "downloading" toasts). */
+async function downloadTracks(tracks, quiet = false) {
+  if (!state.settings.logged_in) { if (!quiet) needSignIn(); return; }
+  const todo = tracks.filter((x) => !state.downloaded.has(x.id) && !state.dlProgress.has(x.id));
+  if (!todo.length) { if (!quiet) toast(t('toast.alreadyDl')); return; }
   for (const x of todo) state.dlProgress.set(x.id, { state: 'queued', progress: 0 });
-  try { await api.download(todo); toast(t('toast.dlStarted', { tracks: tracksLabel(todo.length) })); } catch (e) { toast(errText(e), 'err'); }
+  updateDlButtons();
+  try { await api.download(todo); if (!quiet) toast(t('toast.dlStarted', { tracks: tracksLabel(todo.length) })); } catch (e) { toast(errText(e), 'err'); }
+}
+// Collections you chose to download (liked songs, a playlist, an album), kept on this device:
+// everything in them is downloaded, and a song added later downloads by itself.
+const autoDl = {
+  get() { try { return new Set(JSON.parse(localStorage.getItem('autoDl') || '[]')); } catch { return new Set(); } },
+  set(s) { try { localStorage.setItem('autoDl', JSON.stringify([...s])); } catch { /* ignore */ } },
+  has(k) { return !!k && this.get().has(k); },
+};
+const dlKey = (ctx) => (!ctx ? null : ctx.kind === 'liked' ? 'liked' : ['local', 'playlist', 'album'].includes(ctx.kind) ? `${ctx.kind}:${ctx.id}` : null);
+const dlToggleInner = (on) => `${icon(on ? 'downloaded' : 'download')}${esc(t(on ? 'act.downloaded' : 'act.download'))}`;
+/** On start: catch up on the local collections marked for download. */
+async function syncAutoDl() {
+  if (!state.settings.logged_in) return;
+  for (const k of autoDl.get()) {
+    try {
+      if (k === 'liked') await downloadTracks(await api.likedTracks(), true);
+      else if (k.startsWith('local:')) await downloadTracks((await api.localPlaylist(Number(k.slice(6)))).tracks, true);
+    } catch { /* e.g. a deleted playlist */ }
+  }
+}
+/** Download button of the playing track (capsule + player). */
+function updateDlButtons() {
+  const cur = player.current;
+  const done = !!cur && state.downloaded.has(cur.id);
+  const prog = cur && state.dlProgress.get(cur.id);
+  const label = done ? t('act.downloaded') : prog ? `${t('tr.downloading')} ${Math.round((prog.progress || 0) * 100)}%` : t('pl.download');
+  const cap = $('#cap-dl'), chip = $('#np-dl');
+  for (const b of [cap, chip]) { setIcon(b, done ? 'downloaded' : 'download'); b.classList.toggle('on', done); b.classList.toggle('busy', !!prog && !done); }
+  cap.title = label; cap.setAttribute('aria-label', label);
+  chip.querySelector('span').textContent = label;
 }
 
 async function deleteDownload(x) {
@@ -880,6 +925,7 @@ async function newPlaylist(tracks = []) {
 
 async function addTo(p, tracks) {
   await api.addToPlaylist(p.id, tracks);
+  if (autoDl.has(`local:${p.id}`)) downloadTracks(tracks, true);
   await refreshLibrary();
   toast(t('toast.addedTo', { name: p.name }));
 }
@@ -912,7 +958,18 @@ const actions = {
     if (!player.shuffle) player.toggleShuffle();
     player.playList(pageTracks, Math.floor(Math.random() * pageTracks.length), pageCtx);
   },
-  'download-page': () => downloadTracks(pageTracks),
+  'download-page': (el) => {
+    if (needSignIn()) return;
+    const k = dlKey(pageCtx);
+    if (!k) return downloadTracks(pageTracks);
+    const s = autoDl.get();
+    const on = !s.has(k);
+    on ? s.add(k) : s.delete(k);
+    autoDl.set(s);
+    el.classList.toggle('on', on); el.setAttribute('aria-pressed', on); el.innerHTML = dlToggleInner(on);
+    if (on) downloadTracks(pageTracks, true);
+    toast(t(on ? 'toast.autoDlOn' : 'toast.autoDlOff'));
+  },
   'save-page': async () => {
     await api.createPlaylist(pageCtx.title, pageTracks);
     await refreshLibrary();
@@ -1083,7 +1140,7 @@ document.addEventListener('contextmenu', (e) => {
   if (!e.target.closest('input, textarea')) e.preventDefault();
 });
 
-$('#nav-back').onclick = () => { if (nav.pos > 0) { nav.pos--; render(); } else toStage(); };
+const navBack = () => { if (nav.pos > 0) { nav.pos--; render(); } else toStage(); };
 $('#avatar').onclick = () => ($('#avatar').getAttribute('aria-expanded') === 'true' ? closeOverlays() : accountMenu());
 document.addEventListener('click', (e) => {
   const line = e.target.closest('.ly-line');
@@ -1278,6 +1335,7 @@ function updateNowPlaying() {
   setIcon(cl, liked ? 'heart-fill' : 'heart');
   cl.title = t(liked ? 'menu.unlike' : 'pl.like'); cl.setAttribute('aria-label', cl.title);
   document.title = `${cur.title} · ${artistNames(cur.artists)}`;
+  updateDlButtons();
   // Ambient light takes the cover's colour (computed in Rust).
   if (cur.cover) api.coverColor(cur.cover).then((c) => { if (player.current?.id === cur.id) document.documentElement.style.setProperty('--tint-a', c); }).catch(() => {});
   // Offline badge (the encrypted downloaded copy is playing).
@@ -1493,6 +1551,7 @@ $('#btn-repeat').onclick = $('#cap-repeat').onclick = () => player.cycleRepeat()
 $('#btn-mute').onclick = () => player.toggleMute();
 $('#np-like').onclick = $('#cap-like').onclick = () => player.current && toggleLike(player.current);
 $('#np-radio').onclick = () => startRadio(player.current);
+$('#np-dl').onclick = $('#cap-dl').onclick = () => player.current && downloadTracks([player.current]);
 $('#cap-lyrics').onclick = () => { toStage(); openSide('lyrics'); };
 $('#cap-queue').onclick = () => queueSheet();
 $('#cap-open').onclick = $('#cap-expand').onclick = () => toStage();
@@ -1538,7 +1597,7 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'Space' && !e.target.closest('button, [tabindex], a')) { e.preventDefault(); player.toggle(); }
   else if (e.code === 'ArrowRight' && e.ctrlKey) player.next();
   else if (e.code === 'ArrowLeft' && e.ctrlKey) player.prev();
-  else if (e.altKey && e.key === 'ArrowLeft') $('#nav-back').click();
+  else if (e.altKey && e.key === 'ArrowLeft') navBack();
   else if (e.code === 'ArrowRight' && !e.target.closest('[role=menu]')) audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 5);
   else if (e.code === 'ArrowLeft' && !e.target.closest('[role=menu]')) audio.currentTime = Math.max(0, audio.currentTime - 5);
   else if (e.code === 'ArrowUp' && e.ctrlKey) player.setVolume(audio.volume + 0.05);
@@ -1557,13 +1616,14 @@ document.addEventListener('keydown', (e) => {
 });
 window.addEventListener('mouseup', (e) => {
   // With a history entry armed, the webview's own back navigation fires popstate instead.
-  if (e.button === 3 && !backArmed) $('#nav-back').click();
+  if (e.button === 3 && !backArmed) navBack();
   if (e.button === 4 && nav.pos < nav.stack.length - 1) { nav.pos++; if (mode() !== 'browse') morph('browse'); render(); }
 });
 
 // ---------------------------------------------------------------- backend events
 listen('download-progress', (p) => {
   state.dlProgress.set(p.id, p);
+  if (p.id === player.current?.id) setTimeout(updateDlButtons, 0);
   if (p.state === 'done') {
     state.downloaded.add(p.id);
     state.dlProgress.delete(p.id);
@@ -1719,6 +1779,7 @@ window.__androidLogin = async (cookie) => {
   // Something to play → the stage; otherwise open "For you".
   go('home');
   api.sleepState().then(showSleep).catch(() => {});
+  setTimeout(syncAutoDl, 8000);
   // Signed in before account info existed (or the avatar changed): fetch it once per start.
   // Android (no yt-dlp): prepare YouTube's player for 18+ songs before the first one is played.
   if (state.settings.logged_in && MOBILE_APP) setTimeout(() => api.warmSolver().catch(() => {}), 5000);

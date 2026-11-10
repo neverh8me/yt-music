@@ -10,26 +10,23 @@ use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Emitter, Manager, State, Url, WebviewUrl, WebviewWindowBuilder};
 
 const LABEL: &str = "google-login";
-const START: &str = "https://accounts.google.com/ServiceLogin?service=youtube&passive=true&continue=https%3A%2F%2Fmusic.youtube.com%2F";
-/// YouTube's own sign-in hand-off (what its "Sign in" button does): after Google, youtube.com/signin
-/// sets the YouTube session cookies, then goes on to YouTube Music. WebKit (macOS, Linux) doesn't
-/// always get the YouTube cookies from the shorter START redirect, so it starts here and, if the
-/// page still arrives signed out, retries once (Google's own session is there by then).
-#[cfg(not(windows))]
-const YT_SIGNIN: &str = "https://accounts.google.com/ServiceLogin?service=youtube&uilel=3&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26app%3Ddesktop%26next%3Dhttps%253A%252F%252Fmusic.youtube.com%252F";
-#[cfg(not(windows))]
+/// YouTube Music's own sign-in link (the one ytmdesktop uses too): after Google,
+/// youtube.com/signin sets the YouTube session cookies, then goes on to YouTube Music.
+/// If the page still arrives signed out it is retried once (Google's own session is there by then).
+const START: &str = "https://accounts.google.com/ServiceLogin?ltmpl=music&service=youtube&uilel=3&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26app%3Ddesktop%26next%3Dhttps%253A%252F%252Fmusic.youtube.com%252F";
 static RETRIED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-/// A regular desktop browser UA: Google refuses sign-in in "embedded" browsers it can detect.
 /// Must stay identical to `additionalBrowserArgs` of the main window in tauri.conf.json.
 #[cfg(windows)]
 const MAIN_BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,HardwareMediaKeyHandling,MediaSessionService --autoplay-policy=no-user-gesture-required";
-/// It must match the engine actually rendering the page: Google compares the UA with what
-/// the browser can do and blocks sign-in ("this browser may not be secure") on a mismatch.
-/// Windows renders with WebView2 (Chromium/Edge); macOS and Linux with WebKit (Safari).
+/// A Firefox user agent for the sign-in window, as ytmdesktop does: Google's checks for
+/// embedded browsers target Chromium/WebKit shells and turn sign-in away there ("This browser
+/// or app may not be secure"); they don't apply to Firefox.
 #[cfg(windows)]
-const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0";
-#[cfg(not(windows))]
-const UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15";
+const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:139.0) Gecko/20100101 Firefox/139.0";
+#[cfg(target_os = "macos")]
+const UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.7; rv:139.0) Gecko/20100101 Firefox/139.0";
+#[cfg(not(any(windows, target_os = "macos")))]
+const UA: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:139.0) Gecko/20100101 Firefox/139.0";
 
 #[derive(Clone, serde::Serialize)]
 struct LoginResult {
@@ -123,9 +120,8 @@ async fn capture(app: AppHandle, core: Arc<Core>) {
     POLLING.store(false, Ordering::SeqCst);
 }
 
-/// WebKit: the page reached YouTube Music but without a session → run YouTube's sign-in
-/// hand-off once more (Google is signed in by now, so it passes straight through).
-#[cfg(not(windows))]
+/// The page reached YouTube Music but without a session → run the sign-in hand-off once
+/// more (Google is signed in by now, so it passes straight through).
 async fn retry_signin(app: AppHandle) {
     use std::sync::atomic::Ordering;
     tokio::time::sleep(std::time::Duration::from_secs(4)).await;
@@ -133,7 +129,7 @@ async fn retry_signin(app: AppHandle) {
     if signed_in != Ok(false) || RETRIED.swap(true, Ordering::SeqCst) {
         return;
     }
-    if let (Some(w), Ok(url)) = (app.get_webview_window(LABEL), Url::parse(YT_SIGNIN)) {
+    if let (Some(w), Ok(url)) = (app.get_webview_window(LABEL), Url::parse(START)) {
         let _ = w.navigate(url);
     }
 }
@@ -155,14 +151,8 @@ async fn desktop_login(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<(),
     let core = core.inner().clone();
     let poll_core = core.clone();
     let handler_app = app.clone();
-    #[cfg(windows)]
+    RETRIED.store(false, std::sync::atomic::Ordering::SeqCst);
     let url = Url::parse(START).map_err(|e| e.to_string())?;
-    #[cfg(not(windows))]
-    let url = {
-        RETRIED.store(false, std::sync::atomic::Ordering::SeqCst);
-        let _ = START;
-        Url::parse(YT_SIGNIN).map_err(|e| e.to_string())?
-    };
     let builder = WebviewWindowBuilder::new(&app, LABEL, WebviewUrl::External(url));
     // WebView2 shares one browser process per data folder; every window must use the same
     // browser arguments as the main window (tauri.conf.json), or creation fails with
@@ -181,7 +171,6 @@ async fn desktop_login(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<(),
             let host = payload.url().host_str().unwrap_or("");
             if payload.event() == PageLoadEvent::Finished && host == "music.youtube.com" {
                 tauri::async_runtime::spawn(capture(handler_app.clone(), core.clone()));
-                #[cfg(not(windows))]
                 tauri::async_runtime::spawn(retry_signin(handler_app.clone()));
             }
         })
@@ -212,16 +201,16 @@ pub mod ios {
     use std::time::Duration;
     use tauri::{AppHandle, Emitter, Manager, Url};
 
-    const START: &str = "https://accounts.google.com/ServiceLogin?service=youtube&uilel=3&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26app%3Ddesktop%26next%3Dhttps%253A%252F%252Fmusic.youtube.com%252F";
+    const START: &str = "https://accounts.google.com/ServiceLogin?ltmpl=music&service=youtube&uilel=3&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26app%3Ddesktop%26next%3Dhttps%253A%252F%252Fmusic.youtube.com%252F";
     /// A way back to the app from Google's pages (they have no back button).
     const CANCEL_JS: &str = r#"(function(){if(document.getElementById('ytm-x')||!document.body)return;var b=document.createElement('a');b.id='ytm-x';b.textContent='✕  YT Music';b.href='#ytm-cancel';b.style.cssText='position:fixed;z-index:2147483647;right:12px;top:calc(env(safe-area-inset-top,0px) + 10px);padding:9px 16px;border-radius:20px;background:#ff2e4d;color:#fff;font:600 15px -apple-system,system-ui,sans-serif;text-decoration:none;box-shadow:0 6px 20px rgba(0,0,0,.3)';document.body.appendChild(b);})();"#;
 
-    /// Mobile Safari's UA for this iOS version. Google refuses sign-in in web views it can
-    /// spot, and when the claimed Safari version doesn't match the engine.
+    /// Firefox for iOS's UA for this iOS version: Firefox on iOS is a WKWebView like this
+    /// one, so the UA matches the engine, and Google accepts Firefox for sign-in.
     pub fn user_agent() -> String {
         let v = version().unwrap_or_else(|| "18.0".into());
         format!(
-            "Mozilla/5.0 (iPhone; CPU iPhone OS {} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/{v} Mobile/15E148 Safari/604.1",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS {} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/139.0 Mobile/15E148 Safari/605.1.15",
             v.replace('.', "_")
         )
     }

@@ -70,6 +70,8 @@ pub struct Yt {
     ytdlp_slots: tokio::sync::Semaphore,
     /// One resolve per track id at a time; a second caller waits and reuses the cached URL.
     inflight: Mutex<HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,
+    /// Tracks whose fast (built-in) stream URL died while playing: resolve these with yt-dlp.
+    distrust: Mutex<std::collections::HashSet<String>>,
     /// YouTube player challenge solver (signed-in playback without yt-dlp, e.g. Android).
     solver: crate::jsplayer::Solver,
 }
@@ -206,6 +208,7 @@ impl Yt {
             ytdlp_dir,
             ytdlp_slots: tokio::sync::Semaphore::new(3),
             inflight: Mutex::new(HashMap::new()),
+            distrust: Mutex::new(std::collections::HashSet::new()),
             solver,
         })
     }
@@ -488,8 +491,15 @@ impl Yt {
     }
 
     // ------------------------------------------------------------ streams
+    /// The stream server calls this when a URL turned out dead or forbidden: forget it, and
+    /// resolve this track the slow, sure way (yt-dlp) next time.
     pub fn invalidate(&self, id: &str) {
         self.streams.lock().unwrap().retain(|(k, _), _| k != id);
+        let mut d = self.distrust.lock().unwrap();
+        if d.len() > 500 {
+            d.clear();
+        }
+        d.insert(id.to_string());
     }
 
     fn cached(&self, key: &(String, Codec)) -> Option<StreamInfo> {
@@ -499,10 +509,12 @@ impl Yt {
     /// Resolve an audio URL in the requested codec (falls back to whatever exists),
     /// cached until shortly before it expires.
     ///
-    /// Desktop: every track goes through yt-dlp, the one path that plays everything
-    /// (18+ songs included, signed in), so there is no switching between methods.
-    /// The next tracks are resolved ahead of time, so skipping doesn't wait.
-    /// Android (no yt-dlp): the pure-Rust resolvers.
+    /// Speed first: the built-in resolvers answer in well under a second, so they go first
+    /// everywhere: the anonymous clients, then (sign-in-only songs such as 18+) a signed
+    /// request as your account with the player challenges solved in the app. On desktop
+    /// yt-dlp is the safety net: it takes over when the fast path fails, and for a track
+    /// whose fast URL died while playing (see invalidate). The next tracks are resolved
+    /// ahead of time, so skipping doesn't wait.
     pub async fn stream(&self, id: &str, codec: Codec) -> Result<StreamInfo> {
         let key = (id.to_string(), codec);
         if let Some(s) = self.cached(&key) {
@@ -513,24 +525,33 @@ impl Yt {
         if let Some(s) = self.cached(&key) {
             return Ok(s);
         }
-        let resolved = if cfg!(desktop) && ytdlp::find(&self.ytdlp_dir).is_some() {
+        let ytdlp = cfg!(desktop) && ytdlp::find(&self.ytdlp_dir).is_some();
+        let sure_first = ytdlp && self.distrust.lock().unwrap().contains(id);
+        let fast = async {
+            match self.stream_native_race(id, codec).await {
+                Ok(s) => Ok(s),
+                Err(e) => match self.session_cookie() {
+                    Some(cookie) => self.stream_signed(id, codec, &cookie).await.with_context(|| format!("{e:#}")),
+                    None => Err(e),
+                },
+            }
+        };
+        let resolved = if sure_first {
             match self.stream_ytdlp(id, codec).await {
                 Ok(s) => s,
                 Err(e) => {
-                    // Only if yt-dlp itself is broken (e.g. mid-update): keep the music going.
-                    eprintln!("yt-dlp failed for {id}: {e:#}; using the built-in client");
-                    self.stream_native_race(id, codec).await.context("couldn't get an audio stream")?
+                    eprintln!("yt-dlp failed for {id}: {e:#}; using the built-in clients");
+                    fast.await.context("couldn't get an audio stream")?
                 }
             }
         } else {
-            match self.stream_native_race(id, codec).await {
+            match fast.await {
                 Ok(s) => s,
-                // 18+ (or otherwise sign-in-only) songs: ask as the signed-in user and solve the
-                // player's URL challenges ourselves.
-                Err(e) => match self.session_cookie() {
-                    Some(cookie) => self.stream_signed(id, codec, &cookie).await.with_context(|| format!("{e:#}"))?,
-                    None => return Err(e.context("couldn't get an audio stream")),
-                },
+                Err(e) if ytdlp => {
+                    eprintln!("built-in clients failed for {id}: {e:#}; using yt-dlp");
+                    self.stream_ytdlp(id, codec).await.context("couldn't get an audio stream")?
+                }
+                Err(e) => return Err(e.context("couldn't get an audio stream")),
             }
         };
         self.streams.lock().unwrap().insert(key, resolved.clone());

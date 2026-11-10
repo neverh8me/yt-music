@@ -338,6 +338,10 @@ pub fn get_history(core: St) -> Res<Vec<Track>> {
 // ------------------------------------------------------------- downloads
 #[tauri::command]
 pub fn download_tracks(app: AppHandle, core: St, tracks: Vec<Track>) -> Res<()> {
+    // as in YouTube Music: downloads are for signed-in listeners
+    if core.db.get_setting("logged_in").is_none() {
+        return Err("Sign in to download songs".into());
+    }
     downloads::enqueue(app, core.inner().clone(), tracks);
     Ok(())
 }
