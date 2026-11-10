@@ -931,3 +931,9 @@ body.frame-mac.fullscreen #topbar { padding-left: var(--gutter); }
   .page > .tracklist > .trow { content-visibility: auto; contain-intrinsic-size: auto 56px; }
   .page > .shelf { content-visibility: auto; contain-intrinsic-size: auto 300px; }
 }
+
+/* "Made for you" cards: the label, title and artists stay readable on any cover (bright or
+   busy ones included): a deeper shade under the text and a soft shadow on the letters. */
+.mix-card::after { background: linear-gradient(180deg, rgba(0, 0, 0, .08) 0%, rgba(0, 0, 0, .3) 38%, rgba(0, 0, 0, .78) 68%, rgba(0, 0, 0, .92) 100%); }
+.mix-card b, .mix-card small, .mix-card .mix-label { color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .6), 0 2px 14px rgba(0, 0, 0, .55); }
+.mix-card small, .mix-card .mix-label { color: rgba(255, 255, 255, .92); }
