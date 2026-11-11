@@ -950,3 +950,6 @@ body.frame-mac.fullscreen #topbar { padding-left: var(--gutter); }
 
 /* capsule: a clear line between the transport and the other buttons */
 #capsule .cap-div { width: 1px; height: 30px; margin: 0 var(--s3); background: var(--stroke-strong); }
+
+/* capsule: the cover opens the player too (the chevron and the equalizer button are gone) */
+#capsule .cap-art { cursor: pointer; }

@@ -1553,7 +1553,7 @@ $('#np-radio').onclick = () => startRadio(player.current);
 $('#np-dl').onclick = () => player.current && downloadTracks([player.current]);
 $('#cap-lyrics').onclick = () => { toStage(); openSide('lyrics'); };
 $('#cap-queue').onclick = () => queueSheet();
-$('#cap-open').onclick = $('#cap-expand').onclick = () => toStage();
+$('#cap-open').onclick = $('#cap-art').onclick = () => toStage();
 $('#np-add').onclick = $('#cap-add').onclick = (e) => {
   const above = e.currentTarget.id === 'cap-add'; // the capsule sits at the bottom: open upwards
   const cur = player.current;
