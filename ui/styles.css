@@ -953,3 +953,15 @@ body.frame-mac.fullscreen #topbar { padding-left: var(--gutter); }
 
 /* capsule: the cover opens the player too (the chevron and the equalizer button are gone) */
 #capsule .cap-art { cursor: pointer; }
+
+/* capsule in three parts: cover + title | transport | the other buttons. The side parts are
+   equally wide, so the transport sits exactly in the middle whatever the title length. */
+#capsule { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; column-gap: var(--s4); padding: 0 var(--s4) 0 10px; }
+.cap-left { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
+.cap-mid { display: flex; align-items: center; gap: var(--s1); }
+.cap-right { display: flex; align-items: center; justify-content: flex-end; gap: var(--s1); min-width: 0; }
+#capsule .cap-art { margin-right: 0; }
+#capsule .cap-meta { padding-left: var(--s2); }
+@media (max-width: 760px) {
+  #capsule { grid-template-columns: minmax(0, 1fr) auto auto; column-gap: var(--s1); padding-right: 10px; }
+}
