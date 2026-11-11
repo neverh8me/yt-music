@@ -1392,7 +1392,7 @@ function updateTime() {
     cs.setAttribute('aria-valuetext', `${fmt(c)} / ${fmt(dur)}`);
   }
   const cur = player.current;
-  if (cur) $('#cap-sub').textContent = `${artistNames(cur.artists)} · ${fmt(c)} / ${fmt(dur)}`;
+  if (cur) { const sub = $('#cap-sub'), names = artistNames(cur.artists); if (sub.textContent !== names) sub.textContent = names; sub.title = `${fmt(c)} / ${fmt(dur)}`; }
   if ('mediaSession' in navigator && isFinite(d) && d > 0) {
     try { navigator.mediaSession.setPositionState({ duration: d, position: Math.min(c, d), playbackRate: 1 }); } catch { /* ignore */ }
   }

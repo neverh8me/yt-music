@@ -965,3 +965,13 @@ body.frame-mac.fullscreen #topbar { padding-left: var(--gutter); }
 @media (max-width: 760px) {
   #capsule { grid-template-columns: minmax(0, 1fr) auto auto; column-gap: var(--s1); padding-right: 10px; }
 }
+
+/* capsule: as wide as its content needs (no empty stretches between the three parts), and
+   the progress line stays inside the straight part instead of running into the round ends */
+:root { --cap-w: min(660px, calc(100vw - var(--rail) - 32px - 82px)); }
+#capsule { column-gap: var(--s3); }
+#cap-seek { left: 34px; right: 34px; width: calc(100% - 68px); }
+@media (max-width: 760px) {
+  :root { --cap-w: calc(100vw - 24px); }
+  #cap-seek { left: 28px; right: 28px; width: calc(100% - 56px); }
+}
