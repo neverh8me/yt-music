@@ -268,7 +268,7 @@ const shelf = (title, items, kind, label = '') => !items?.length ? '' :
 
 function collectionHeader({ cover, kind, title, meta, round = false, actions = '', phClass = '' }) {
   return `<div class="hero">
-    <div class="hero-art ${round ? 'round' : ''}">${cover ? `<img src="${esc(cover)}" alt="">` : `<div class="ph qc ${phClass}">${icon(phClass ? (phClass === 'liked-cover' ? 'heart-fill' : 'download') : 'music')}</div>`}</div>
+    <div class="hero-art ${round ? 'round' : ''}">${cover ? `<img src="${esc(cover)}" alt="" data-onerr="fallback" data-fallback="${esc(pageTracks[0]?.cover || '')}">` : `<div class="ph qc ${phClass}">${icon(phClass ? (phClass === 'liked-cover' ? 'heart-fill' : 'download') : 'music')}</div>`}</div>
     <div class="hero-text">
       <div class="hero-kind">${esc(kind)}</div>
       <h1 class="${title.length > 30 ? 'long' : ''}">${esc(title)}</h1>
@@ -1091,6 +1091,13 @@ function trackFromEl(el) {
 document.addEventListener('error', (e) => {
   const img = e.target;
   if (!(img instanceof HTMLImageElement)) return;
+  // a playlist's own picture has a signed address that expires (a cached page may hold an old one):
+  // show the first song's cover instead
+  if (img.dataset.onerr === 'fallback') {
+    img.dataset.onerr = 'hide';
+    if (img.dataset.fallback) img.src = img.dataset.fallback; else img.style.visibility = 'hidden';
+    return;
+  }
   if (img.dataset.onerr === 'remove') img.remove();
   else if (img.dataset.onerr === 'hide') img.style.visibility = 'hidden';
 }, true);

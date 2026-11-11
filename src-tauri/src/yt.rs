@@ -355,7 +355,8 @@ impl Yt {
             qr = qr.authenticated();
         }
         let mut p = qr.music_playlist(id).await?;
-        p.tracks.extend_limit(&qr, 500).await.ok();
+        // whole playlist (YouTube Music itself caps playlists at 5000 songs)
+        p.tracks.extend_limit(&qr, 5000).await.ok();
         Ok(PlaylistPage {
             cover: best_thumb(&p.thumbnail),
             author: p.channel.map(|c| c.name),
@@ -374,7 +375,7 @@ impl Yt {
             qr = qr.authenticated();
         }
         let mut p = qr.playlist(id).await?;
-        p.videos.extend_limit(&qr, 500).await.ok();
+        p.videos.extend_limit(&qr, 5000).await.ok();
         Ok(PlaylistPage {
             cover: best_thumb(&p.thumbnail),
             author: p.channel.map(|c| c.name),

@@ -975,3 +975,6 @@ body.frame-mac.fullscreen #topbar { padding-left: var(--gutter); }
   :root { --cap-w: calc(100vw - 24px); }
   #cap-seek { left: 28px; right: 28px; width: calc(100% - 56px); }
 }
+
+/* long lists (a 1500-song playlist): rows outside the screen are not laid out or painted */
+.page > .tracklist > .trow { content-visibility: auto; contain-intrinsic-size: auto 54px; }
