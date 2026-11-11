@@ -947,3 +947,6 @@ body.frame-mac.fullscreen #topbar { padding-left: var(--gutter); }
 .capvol-btn { color: var(--muted); }
 .capvol-btn:hover { color: var(--text); }
 .capvol-btn:active, #capvol.open .capvol-btn { color: var(--accent); }
+
+/* capsule: a clear line between the transport and the other buttons */
+#capsule .cap-div { width: 1px; height: 30px; margin: 0 var(--s3); background: var(--stroke-strong); }
