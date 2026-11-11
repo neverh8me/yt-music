@@ -937,3 +937,13 @@ body.frame-mac.fullscreen #topbar { padding-left: var(--gutter); }
 .mix-card::after { background: linear-gradient(180deg, rgba(0, 0, 0, .08) 0%, rgba(0, 0, 0, .3) 38%, rgba(0, 0, 0, .78) 68%, rgba(0, 0, 0, .92) 100%); }
 .mix-card b, .mix-card small, .mix-card .mix-label { color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .6), 0 2px 14px rgba(0, 0, 0, .55); }
 .mix-card small, .mix-card .mix-label { color: rgba(255, 255, 255, .92); }
+
+/* capsule colours: only back / play / next are bright; everything else (and the volume
+   bubble) is grey and turns red while pressed or switched on */
+#capsule .tbtn { color: var(--muted); }
+#capsule #cap-prev, #capsule #cap-next { color: var(--text); }
+#capsule .tbtn:hover { color: var(--text); }
+#capsule .tbtn:active, #capsule .tbtn.on, #capsule .tbtn[aria-pressed="true"], #capsule .tbtn[aria-expanded="true"] { color: var(--accent); }
+.capvol-btn { color: var(--muted); }
+.capvol-btn:hover { color: var(--text); }
+.capvol-btn:active, #capvol.open .capvol-btn { color: var(--accent); }

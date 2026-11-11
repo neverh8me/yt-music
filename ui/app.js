@@ -872,9 +872,8 @@ function updateDlButtons() {
   const done = !!cur && state.downloaded.has(cur.id);
   const prog = cur && state.dlProgress.get(cur.id);
   const label = done ? t('act.downloaded') : prog ? `${t('tr.downloading')} ${Math.round((prog.progress || 0) * 100)}%` : t('pl.download');
-  const cap = $('#cap-dl'), chip = $('#np-dl');
-  for (const b of [cap, chip]) { setIcon(b, done ? 'downloaded' : 'download'); b.classList.toggle('on', done); b.classList.toggle('busy', !!prog && !done); }
-  cap.title = label; cap.setAttribute('aria-label', label);
+  const chip = $('#np-dl');
+  for (const b of [chip]) { setIcon(b, done ? 'downloaded' : 'download'); b.classList.toggle('on', done); b.classList.toggle('busy', !!prog && !done); }
   chip.querySelector('span').textContent = label;
 }
 
@@ -1551,17 +1550,19 @@ $('#btn-repeat').onclick = $('#cap-repeat').onclick = () => player.cycleRepeat()
 $('#btn-mute').onclick = () => player.toggleMute();
 $('#np-like').onclick = $('#cap-like').onclick = () => player.current && toggleLike(player.current);
 $('#np-radio').onclick = () => startRadio(player.current);
-$('#np-dl').onclick = $('#cap-dl').onclick = () => player.current && downloadTracks([player.current]);
+$('#np-dl').onclick = () => player.current && downloadTracks([player.current]);
 $('#cap-lyrics').onclick = () => { toStage(); openSide('lyrics'); };
 $('#cap-queue').onclick = () => queueSheet();
 $('#cap-open').onclick = $('#cap-expand').onclick = () => toStage();
-$('#np-add').onclick = (e) => {
+$('#np-add').onclick = $('#cap-add').onclick = (e) => {
+  const above = e.currentTarget.id === 'cap-add'; // the capsule sits at the bottom: open upwards
   const cur = player.current;
   if (!cur) return;
   const r = e.currentTarget.getBoundingClientRect();
   const items = [{ label: t('menu.newPlaylist'), run: () => newPlaylist([cur]) },
     ...state.playlists.map((p) => ({ label: p.name, run: () => addTo(p, [cur]) }))];
   showMenu(r.left, r.bottom + 6, items);
+  if (above) menu.style.top = `${Math.max(8, r.top - menu.offsetHeight - 10)}px`;
 };
 // Drag the stage cover down → open the layers; swipe the capsule up → back to the stage.
 function swipe(el, dir, fn) {
