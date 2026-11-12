@@ -13,20 +13,20 @@ const LABEL: &str = "google-login";
 /// YouTube Music's own sign-in link (the one ytmdesktop uses too): after Google,
 /// youtube.com/signin sets the YouTube session cookies, then goes on to YouTube Music.
 /// If the page still arrives signed out it is retried once (Google's own session is there by then).
-const START: &str = "https://accounts.google.com/ServiceLogin?ltmpl=music&service=youtube&uilel=3&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26app%3Ddesktop%26next%3Dhttps%253A%252F%252Fmusic.youtube.com%252F";
+pub(crate) const START: &str = "https://accounts.google.com/ServiceLogin?ltmpl=music&service=youtube&uilel=3&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26app%3Ddesktop%26next%3Dhttps%253A%252F%252Fmusic.youtube.com%252F";
 static RETRIED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Must stay identical to `additionalBrowserArgs` of the main window in tauri.conf.json.
 #[cfg(windows)]
-const MAIN_BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,HardwareMediaKeyHandling,MediaSessionService --autoplay-policy=no-user-gesture-required";
+pub(crate) const MAIN_BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,HardwareMediaKeyHandling,MediaSessionService --autoplay-policy=no-user-gesture-required";
 /// A Firefox user agent for the sign-in window, as ytmdesktop does: Google's checks for
 /// embedded browsers target Chromium/WebKit shells and turn sign-in away there ("This browser
 /// or app may not be secure"); they don't apply to Firefox.
 #[cfg(windows)]
-const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:139.0) Gecko/20100101 Firefox/139.0";
+pub(crate) const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:139.0) Gecko/20100101 Firefox/139.0";
 #[cfg(target_os = "macos")]
-const UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.7; rv:139.0) Gecko/20100101 Firefox/139.0";
+pub(crate) const UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.7; rv:139.0) Gecko/20100101 Firefox/139.0";
 #[cfg(not(any(windows, target_os = "macos")))]
-const UA: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:139.0) Gecko/20100101 Firefox/139.0";
+pub(crate) const UA: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:139.0) Gecko/20100101 Firefox/139.0";
 
 #[derive(Clone, serde::Serialize)]
 struct LoginResult {

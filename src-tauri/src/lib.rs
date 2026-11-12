@@ -20,6 +20,8 @@ mod server;
 mod state;
 mod update;
 mod vault;
+#[cfg(desktop)]
+mod webplayer;
 mod yt;
 mod ytdlp;
 
@@ -90,6 +92,8 @@ pub fn run() {
                     }
                 });
             }
+            #[cfg(desktop)]
+            webplayer::init(app.handle(), &core);
             app.manage(core);
             jsplayer::attach(app.handle().clone());
             // Our own title bar (ui: #topbar + window buttons) instead of the system frame.
@@ -113,6 +117,22 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            #[cfg(desktop)]
+            webplayer::webplayer_load,
+            #[cfg(desktop)]
+            webplayer::webplayer_play,
+            #[cfg(desktop)]
+            webplayer::webplayer_pause,
+            #[cfg(desktop)]
+            webplayer::webplayer_stop,
+            #[cfg(desktop)]
+            webplayer::webplayer_seek,
+            #[cfg(desktop)]
+            webplayer::webplayer_volume,
+            #[cfg(desktop)]
+            webplayer::webplayer_sign_in,
+            #[cfg(desktop)]
+            webplayer::webplayer_enable,
             commands::stream_base,
             commands::search,
             commands::search_suggestions,

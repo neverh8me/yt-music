@@ -405,6 +405,11 @@ pub async fn get_settings(core: St<'_>) -> Res<Settings> {
         discord_available: false,
         global_hotkeys: crate::integrations::enabled(&core, "global_hotkeys"),
         hotkeys_supported: cfg!(desktop),
+        #[cfg(desktop)]
+        web_player: crate::webplayer::enabled(&core),
+        #[cfg(mobile)]
+        web_player: false,
+        web_player_supported: cfg!(desktop),
     })
 }
 

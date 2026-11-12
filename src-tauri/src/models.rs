@@ -176,6 +176,9 @@ pub struct Settings {
     pub discord_available: bool,
     pub global_hotkeys: bool,
     pub hotkeys_supported: bool,
+    /// Desktop: play through YouTube Music's web player (webplayer.rs).
+    pub web_player: bool,
+    pub web_player_supported: bool,
 }
 
 #[derive(Serialize)]
