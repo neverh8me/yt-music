@@ -103,9 +103,10 @@ const PAGE_JS: &str = r#"(function () {
 #[derive(Default)]
 struct Shared {
     last_json: String,
+    repeats: u32,
     signing_in: bool,
 }
-static SHARED: Mutex<Shared> = Mutex::new(Shared { last_json: String::new(), signing_in: false });
+static SHARED: Mutex<Shared> = Mutex::new(Shared { last_json: String::new(), signing_in: false, repeats: 0 });
 static POLLING: AtomicBool = AtomicBool::new(false);
 
 pub fn enabled(core: &Core) -> bool {
@@ -180,7 +181,10 @@ fn on_state(app: &AppHandle, json: String) {
     }
     {
         let mut sh = SHARED.lock().unwrap();
-        if sh.last_json == json {
+        // Unchanged state is repeated every ~5 s, so a UI that started listening late
+        // (or reloaded) still learns where the player is.
+        sh.repeats = if sh.last_json == json { sh.repeats + 1 } else { 0 };
+        if sh.repeats % 20 != 0 {
             return;
         }
         sh.last_json = json;

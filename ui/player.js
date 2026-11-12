@@ -21,6 +21,13 @@ let lastEnds = null;    // the page's "track ended" counter
 let lazyId = null;      // restored track not loaded into any engine yet (loads on play)
 let watchdog = 0;
 const WEB_START_TIMEOUT = 12000;
+// Without an account the site stops songs part-way (seen at ~0:39, cause unknown), so the
+// web player is used only while its page is signed in; guests keep the built-in engine.
+let webSignedIn = false;
+// Safety net for any other stall: playing, not an ad, but the position stands still.
+const WEB_STALL_MS = 8000;
+let progressAt = 0;
+let webStalled = false; // a stall happened: built-in engine until the next sign-in
 const pushVolume = () => api.wpVolume(el.volume, el.muted).catch(() => {});
 
 // What the rest of the UI (and this file) uses instead of the <audio> element.
@@ -65,14 +72,14 @@ async function load(id, autoplay) {
   const seq = loadedSeq;
   clearTimeout(watchdog);
   lazyId = null;
-  if (!webOn) { playBuiltIn(id, autoplay); return; }
+  if (!webOn || !webSignedIn || webStalled) { playBuiltIn(id, autoplay); return; }
   // The web player starts playing as soon as it loads, so a restored (paused) track waits.
   if (!autoplay) { lazyId = id; return; }
   let handled = false;
   try { handled = await api.wpLoad(id); } catch (e) { console.warn('web player', e); }
   if (seq !== loadedSeq) return; // another track was started meanwhile
   if (!handled) { playBuiltIn(id, true); emit('state'); return; } // offline copy
-  web = true; ws = null; webPlaying = true;
+  web = true; ws = null; webPlaying = true; progressAt = Date.now();
   if (el.getAttribute('src')) { el.pause(); el.removeAttribute('src'); el.load(); }
   pushVolume();
   // If the site doesn't start the song (page broken, blocked, no network to it), play it
@@ -85,7 +92,21 @@ async function load(id, autoplay) {
   emit('state'); emit('time');
 }
 
+/** The song stands still in the web player: carry on from the same place in <audio>. */
+function checkStall() {
+  if (!web || !ws || ws.ad || !webPlaying || Date.now() - progressAt < WEB_STALL_MS) return;
+  const id = snap.current?.track.id, at = ws.position;
+  if (!id) return;
+  console.warn('web player stalled, using the built-in engine');
+  webStalled = true;
+  playBuiltIn(id, true);
+  el.addEventListener('loadedmetadata', () => { if (at > 1) el.currentTime = at; }, { once: true });
+  emit('state');
+}
+
 function onWebState(s) {
+  webSignedIn = !!s.signed_in;
+  if (!ws || s.position !== ws.position || s.ad || s.state === 2) progressAt = Date.now();
   const id = snap.current?.track.id;
   if (lastEnds === null || s.ends < lastEnds) lastEnds = s.ends; // first report / page reloaded
   if (!web || !id || s.want !== id) { lastEnds = s.ends; return; }
@@ -212,6 +233,8 @@ export const player = {
     el.preload = 'metadata';
     try { const s = await api.settings(); webOn = !!(s.web_player_supported && s.web_player); } catch { webOn = false; }
     if (webOn) listen('webplayer-state', onWebState);
+    setInterval(checkStall, 2000);
+    listen('google-login', () => { webStalled = false; });
     apply(await api.playerState(), { autoplayAudio: false });
     emit('volume');
     // Changes made elsewhere in Rust (e.g. background radio top-up) arrive as events.
