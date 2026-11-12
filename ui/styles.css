@@ -978,3 +978,6 @@ body.frame-mac.fullscreen #topbar { padding-left: var(--gutter); }
 
 /* long lists (a 1500-song playlist): rows outside the screen are not laid out or painted */
 .page > .tracklist > .trow { content-visibility: auto; contain-intrinsic-size: auto 54px; }
+/* The shade must lie over the cover: `.mix-card > *` lifts every child, the image included,
+   above the ::after shade, so put the image back on the bottom layer. */
+.mix-card img { z-index: 0; }
