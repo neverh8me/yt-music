@@ -68,6 +68,7 @@ pub fn run() {
             let http = reqwest::Client::builder()
                 .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
                 .connect_timeout(std::time::Duration::from_secs(10))
+                .read_timeout(std::time::Duration::from_secs(20))
                 .build()?;
 
             let core = Arc::new(Core::new(db, yt, http, data_dir, default_download_dir));

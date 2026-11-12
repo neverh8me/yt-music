@@ -134,6 +134,9 @@ async fn fetch_encrypted(
         if done == 0 {
             bail!("empty response");
         }
+        if let Some(t) = total.filter(|t| done < *t) {
+            bail!("incomplete download: {done} of {t} bytes");
+        }
         Ok(())
     }
     .await;

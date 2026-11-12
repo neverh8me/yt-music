@@ -106,7 +106,8 @@ pub async fn check_update(app: AppHandle) -> Result<UpdateInfo, String> {
     let (latest, notes, apk) = latest_apk(&app).await?;
     let newer = semver::Version::parse(&cur).map(|c| latest > c).unwrap_or(false);
     Ok(UpdateInfo {
-        available: newer && apk.is_some(),
+        // iOS has no self-update: the new .ipa is side-loaded by hand (README).
+        available: newer && apk.is_some() && cfg!(target_os = "android"),
         current: cur,
         version: Some(latest.to_string()),
         notes,
