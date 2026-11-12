@@ -1,0 +1,71 @@
+# Desktop test build: the same bundles as a release, but nothing is published. No tag, no
+# release, no update feed: the files are artifacts of the run (kept 14 days).
+# Run it from the Actions tab ("Desktop test build" → Run workflow), on any branch.
+name: Desktop test build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            name: Windows-x64
+            args: ''
+          - platform: macos-latest
+            name: macOS-Apple-Silicon
+            args: '--target aarch64-apple-darwin'
+          - platform: ubuntu-22.04
+            name: Linux-x64
+            args: '--bundles deb'
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
+
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri -> target
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: Build
+        shell: bash
+        env:
+          # The bundle config asks for signed update artifacts, so the build needs the key
+          # even though nothing here is published.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          cd src-tauri
+          npx --yes @tauri-apps/cli@2 build --ci ${{ matrix.args }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: YT.Music_test_${{ matrix.name }}
+          # installers, plus the bare Windows program (runs without installing)
+          path: |
+            src-tauri/target/**/bundle/nsis/*.exe
+            src-tauri/target/**/bundle/dmg/*.dmg
+            src-tauri/target/**/bundle/deb/*.deb
+            src-tauri/target/release/ytubem.exe
+          retention-days: 14
+          if-no-files-found: error
