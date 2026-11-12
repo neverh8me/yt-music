@@ -27,7 +27,6 @@ let webSignedIn = false;
 // Safety net for any other stall: playing, not an ad, but the position stands still.
 const WEB_STALL_MS = 8000;
 let progressAt = 0;
-let webStalled = false; // a stall happened: built-in engine until the next sign-in
 const pushVolume = () => api.wpVolume(el.volume, el.muted).catch(() => {});
 
 // What the rest of the UI (and this file) uses instead of the <audio> element.
@@ -50,7 +49,7 @@ const audio = {
   play() {
     if (lazyId) { const id = lazyId; lazyId = null; load(id, true); return Promise.resolve(); }
     if (!web) return el.play();
-    webPlaying = true; emit('state');
+    webPlaying = true; progressAt = Date.now(); emit('state');
     return api.wpPlay();
   },
   pause() {
@@ -72,7 +71,7 @@ async function load(id, autoplay) {
   const seq = loadedSeq;
   clearTimeout(watchdog);
   lazyId = null;
-  if (!webOn || !webSignedIn || webStalled) { playBuiltIn(id, autoplay); return; }
+  if (!webOn || !webSignedIn) { playBuiltIn(id, autoplay); return; }
   // The web player starts playing as soon as it loads, so a restored (paused) track waits.
   if (!autoplay) { lazyId = id; return; }
   let handled = false;
@@ -98,9 +97,8 @@ function checkStall() {
   const id = snap.current?.track.id, at = ws.position;
   if (!id) return;
   console.warn('web player stalled, using the built-in engine');
-  webStalled = true;
   playBuiltIn(id, true);
-  el.addEventListener('loadedmetadata', () => { if (at > 1) el.currentTime = at; }, { once: true });
+  el.addEventListener('loadedmetadata', () => { if (at > 1 && snap.current?.track.id === id) el.currentTime = at; }, { once: true });
   emit('state');
 }
 
@@ -173,6 +171,13 @@ export const player = {
   /** YouTube is playing an ad in the web player. */
   get ad() { return web && !!ws?.ad; },
   get webEngine() { return webOn; },
+  /** The player page is about to reload (sign-in, sign-out): park the track; play starts it again. */
+  suspend() {
+    if (!web) return;
+    api.wpStop().catch(() => {});
+    web = false; ws = null; lazyId = snap.current?.track.id || null;
+    emit('state');
+  },
   /** Switch between the web player and the built-in engine (Settings). */
   async setWebEngine(on) {
     await api.wpEnable(on);
@@ -234,7 +239,6 @@ export const player = {
     try { const s = await api.settings(); webOn = !!(s.web_player_supported && s.web_player); } catch { webOn = false; }
     if (webOn) listen('webplayer-state', onWebState);
     setInterval(checkStall, 2000);
-    listen('google-login', () => { webStalled = false; });
     apply(await api.playerState(), { autoplayAudio: false });
     emit('volume');
     // Changes made elsewhere in Rust (e.g. background radio top-up) arrive as events.

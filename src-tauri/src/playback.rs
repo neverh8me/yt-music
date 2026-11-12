@@ -1,5 +1,6 @@
 //! Tauri commands around the Rust queue engine (`player::Queue`).
-//! After every change the queue is persisted and a `player-state` event is emitted;
+//! After every change the queue is persisted and returned to the UI (changes made in the
+//! background are sent as a `player-state` event instead);
 //! when a new track starts we record history, pre-resolve the next stream and top up
 //! the queue with radio tracks when it is about to run out.
 use crate::models::Track;
@@ -19,13 +20,12 @@ pub struct StepReply {
     pub state: Snapshot,
 }
 
-/// Persist + broadcast; kick off side effects when playback (re)started.
+/// Persist; kick off side effects when playback (re)started.
 fn publish(app: &AppHandle, core: &Arc<Core>, q: &Queue, started: bool) -> Snapshot {
     let snap = q.snapshot();
     if let Ok(json) = serde_json::to_string(&q.for_storage()) {
         let _ = core.db.set_setting("queue", &json);
     }
-    let _ = app.emit("player-state", &snap);
     if started {
         on_started(app, core, q);
     }
@@ -53,7 +53,9 @@ fn on_started(app: &AppHandle, core: &Arc<Core>, q: &Queue) {
             if let Ok(tracks) = core.yt.radio(&seed).await {
                 let mut q = core.queue.lock().await;
                 if q.extend_radio(tracks) > 0 {
-                    publish(&app, &core, &q, false);
+                    // no command is waiting for this change, so the UI hears of it by event
+                    let snap = publish(&app, &core, &q, false);
+                    let _ = app.emit("player-state", &snap);
                 }
             }
         });

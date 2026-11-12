@@ -20,6 +20,8 @@ jobs:
         run: |
           t="$(mktemp -d)"
           for f in ui/*.js; do cp "$f" "$t/$(basename "${f%.js}").mjs"; node --check "$t/$(basename "${f%.js}").mjs"; done
+      - name: Player engine test
+        run: node tests/player.test.mjs
 
   # Release notes: the commits since the last published (non-draft) release.
   notes:

@@ -545,7 +545,8 @@ impl Yt {
                 },
             }
         };
-        let resolved = if sure_first {
+        let resolved: Result<StreamInfo> = async {
+            Ok(if sure_first {
             let itag = self.itags.lock().unwrap().get(id).cloned();
             match self.stream_ytdlp(id, codec, itag.as_deref()).await {
                 Ok(s) => s,
@@ -577,9 +578,15 @@ impl Yt {
                 }
                 Err(e) => return Err(e.context("couldn't get an audio stream")),
             }
-        };
-        self.streams.lock().unwrap().insert(key, resolved.clone());
-        self.inflight.lock().unwrap().remove(id);
+            })
+        }
+        .await;
+        self.inflight.lock().unwrap().remove(id); // on failure too
+        let resolved = resolved?;
+        let mut m = self.streams.lock().unwrap();
+        m.retain(|_, s| s.expires > Instant::now()); // expired URLs are of no use
+        m.insert(key, resolved.clone());
+        drop(m);
         Ok(resolved)
     }
 

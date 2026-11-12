@@ -949,6 +949,7 @@ async function playCollection(kind, id) {
 }
 
 async function logout() {
+  player.suspend();
   await api.logout();
   state.settings = await api.settings();
   state.remotePlaylists = [];
@@ -1024,6 +1025,7 @@ const actions = {
     if (el.closest('.set-block')) { el.disabled = true; el.querySelector('span').textContent = t('set.googleWaiting'); }
     // Android: native sign-in screen (LoginActivity); it calls window.__androidLogin back.
     if (window.AndroidAuth) { window.AndroidAuth.login(); return; }
+    player.suspend();
     try { await api.googleLogin(); } catch (e) { toast(errText(e), 'err'); if (mode() === 'browse') render(); }
   },
   'switch-account': async () => {

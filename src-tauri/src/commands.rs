@@ -250,8 +250,7 @@ pub fn media_update(app: AppHandle, np: Option<serde_json::Value>) {
 /// Resolve stream URLs in the background (e.g. the track under the pointer), so a click plays at once.
 #[tauri::command]
 pub fn prefetch(core: St, ids: Vec<String>) {
-    let ok = |id: &String| id.len() <= 32 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
-    for id in ids.into_iter().filter(ok).take(3) {
+    for id in ids.into_iter().filter(|id| crate::server::valid_id(id)).take(3) {
         let core = core.inner().clone();
         tauri::async_runtime::spawn(async move {
             if core.db.download_path(&id).is_none() {
@@ -458,7 +457,10 @@ pub async fn refresh_account(core: St<'_>) -> Res<()> {
 #[tauri::command]
 pub async fn logout(app: tauri::AppHandle, core: St<'_>) -> Res<()> {
     #[cfg(desktop)]
-    crate::webplayer::sign_out(&app).await;
+    {
+        crate::webplayer::sign_out(&app).await;
+        let _ = core.db.del_setting(crate::webplayer::WEB_LOGIN);
+    }
     let _ = &app;
     forget_account(&core).await
 }
@@ -470,6 +472,7 @@ pub async fn forget_account(core: &Core) -> Res<()> {
     core.db.del_setting("account_name").map_err(e)?;
     core.db.del_setting("account_avatar").map_err(e)?;
     core.db.del_setting("remote_playlists").map_err(e)?;
+    let _ = core.db.cache_prune(PAGE_PREFIX, 0);
     Ok(())
 }
 

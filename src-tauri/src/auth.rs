@@ -216,14 +216,13 @@ async fn desktop_login(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<(),
 /// to rustypipe, they're removed from the webview again, and the app comes back.
 #[cfg(target_os = "ios")]
 pub mod ios {
-    use super::{POLLING, log};
+    use super::{POLLING, START, log};
     use crate::state::Core;
     use std::sync::Arc;
     use std::sync::atomic::Ordering;
     use std::time::Duration;
     use tauri::{AppHandle, Emitter, Manager, Url};
 
-    const START: &str = "https://accounts.google.com/ServiceLogin?ltmpl=music&service=youtube&uilel=3&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26app%3Ddesktop%26next%3Dhttps%253A%252F%252Fmusic.youtube.com%252F";
     /// A way back to the app from Google's pages (they have no back button).
     const CANCEL_JS: &str = r#"(function(){if(document.getElementById('ytm-x')||!document.body)return;var b=document.createElement('a');b.id='ytm-x';b.textContent='✕  YT Music';b.href='#ytm-cancel';b.style.cssText='position:fixed;z-index:2147483647;right:12px;top:calc(env(safe-area-inset-top,0px) + 10px);padding:9px 16px;border-radius:20px;background:#ff2e4d;color:#fff;font:600 15px -apple-system,system-ui,sans-serif;text-decoration:none;box-shadow:0 6px 20px rgba(0,0,0,.3)';document.body.appendChild(b);})();"#;
 

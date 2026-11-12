@@ -18,6 +18,7 @@
 //!
 //! Polling from Rust (rather than a timer in the page) also keeps working when the engine
 //! throttles timers of a page that is not visible.
+use crate::server::valid_id; // only YouTube video ids ever reach the page script
 use crate::state::Core;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -113,11 +114,6 @@ pub fn enabled(core: &Core) -> bool {
     core.db.get_setting(SETTING).as_deref() != Some("0")
 }
 
-/// Only YouTube video ids ever reach the page script.
-fn valid_id(id: &str) -> bool {
-    !id.is_empty() && id.len() <= 32 && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-}
-
 /// Create the hidden player window if it isn't there, and start polling it.
 pub fn ensure(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
     if let Some(w) = app.get_webview_window(LABEL) {
@@ -198,7 +194,10 @@ fn run(app: &AppHandle, js: String) -> Result<(), String> {
 
 /// Start the engine at launch so the first song starts at once.
 pub fn init(app: &AppHandle, core: &Arc<Core>) {
-    if !enabled(core) {
+    // Guests play through the built-in engine: no hidden page (and its memory) for them.
+    // It is created at sign-in. "logged_in" alone = an old sign-in for `migrate` to look at.
+    let account = core.db.get_setting(WEB_LOGIN).is_some() || core.db.get_setting("logged_in").is_some();
+    if !enabled(core) || !account {
         return;
     }
     if let Err(e) = ensure(app) {

@@ -31,7 +31,7 @@ pub async fn start(core: Arc<Core>) -> anyhow::Result<u16> {
     Ok(port)
 }
 
-fn valid_id(id: &str) -> bool {
+pub(crate) fn valid_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 32 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
