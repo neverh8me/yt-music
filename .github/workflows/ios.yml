@@ -1,10 +1,12 @@
 # iOS test build: an UNSIGNED .ipa for side-loading on your own iPhone (Sideloadly / AltStore
 # re-sign it with a free Apple ID; it then runs for 7 days). No Apple certificate is needed.
 # Run it from the Actions tab ("iOS test build" → Run workflow); the .ipa is an artifact of the run.
+# The release workflow also calls it and attaches the .ipa to the release as a beta.
 name: iOS test build
 
 on:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read

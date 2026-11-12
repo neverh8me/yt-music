@@ -54,6 +54,9 @@ jobs:
             echo '| macOS (Intel) | `*_macOS-Intel.dmg` |'
             echo '| Linux (Debian/Ubuntu) | `*_Linux-x64.deb` |'
             echo '| Android | `*_Android.apk` |'
+            echo '| iPhone (beta, iOS 14+) | `*-beta_iOS-unsigned.ipa`, installed with AltStore or Sideloadly |'
+            echo
+            echo 'The iPhone build is a beta and is not signed: AltStore / Sideloadly sign it with your own Apple ID (with a free Apple ID it has to be refreshed every 7 days).'
             echo
             echo 'macOS builds are not notarized: right-click the app → Open the first time.'
             echo
@@ -219,3 +222,31 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           cp "$APK" "YT.Music_${VERSION}_Android.apk"
           gh release upload "$GITHUB_REF_NAME" "YT.Music_${VERSION}_Android.apk" --clobber
+
+  # iPhone beta: the unsigned .ipa from ios.yml, attached to the release as "<version>-beta".
+  # It comes last and on its own: a failed iOS build must not hold back the other platforms.
+  ios:
+    needs: build
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ios.yml
+
+  ios-release:
+    needs: ios
+    if: ${{ !cancelled() && needs.ios.result == 'success' && startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh run download "$GITHUB_RUN_ID" --name ios-unsigned-ipa
+          IPA="$(ls *.ipa | head -1)"
+          VERSION="${GITHUB_REF_NAME#v}"
+          mv "$IPA" "YT.Music_${VERSION}-beta_iOS-unsigned.ipa"
+          gh release upload "$GITHUB_REF_NAME" "YT.Music_${VERSION}-beta_iOS-unsigned.ipa" --clobber

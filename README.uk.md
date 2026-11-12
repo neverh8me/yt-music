@@ -58,6 +58,9 @@
 | macOS, Intel | `*_macOS-Intel.dmg` |
 | Linux (Debian/Ubuntu) | `*_Linux-x64.deb` |
 | Android | `*_Android.apk` (дозволь встановлення з невідомих джерел) |
+| iPhone (**бета**) | `*-beta_iOS-unsigned.ipa`, встановлюється через [AltStore](https://altstore.io) або [Sideloadly](https://sideloadly.io) |
+
+Збірка для iPhone — **бета**, в App Store її немає. Файл `.ipa` не підписаний: AltStore або Sideloadly підписує його твоїм Apple ID і встановлює. З безкоштовним Apple ID застосунок працює 7 днів, потім його треба оновити так само (AltStore вміє робити це сам). Сам він не оновлюється: встанови новий `.ipa` поверх старого.
 
 Збірки для macOS не нотаризовані: під час першого запуску натисни на застосунок правою кнопкою і вибери **Відкрити**.
 
@@ -69,6 +72,7 @@
 | macOS | macOS 11 Big Sur або новіша (Apple Silicon чи Intel) |
 | Linux | Ubuntu 22.04+, Debian 12+ або інший дистрибутив із glibc 2.35 і WebKitGTK 4.1; x86-64 |
 | Android | Android 7.0+ на 64-бітному ARM-телефоні, з оновленим Android System WebView (Google Play) |
+| iPhone (бета) | iOS 14+, комп'ютер з AltStore або Sideloadly та Apple ID |
 
 На ПК під час першого запуску застосунок завантажує [yt-dlp](https://github.com/yt-dlp/yt-dlp) (близько 18 МБ) для відтворення. Інтернет потрібен, окрім завантажених треків.
 
