@@ -1,11 +1,107 @@
 // Thin playback layer. The queue, shuffle/repeat, autoplay radio, history and prefetching
 // all live in Rust (src-tauri/src/player.rs + playback.rs). This file only plays the
-// current track in <audio> and reports user/audio events back to Rust.
+// current track and reports user/audio events back to Rust.
+//
+// Two engines sit behind one `audio` facade (issue #17):
+// - the <audio> element fed by our local stream server: phones, offline copies, fallback;
+// - on desktop, YouTube Music's own web player in a hidden webview (src-tauri/src/webplayer.rs):
+//   Rust drives the page and sends its state as `webplayer-state` events.
 import { api, listen, streamUrl } from './api.js';
 
-const audio = document.getElementById('audio');
+const el = document.getElementById('audio');
 const listeners = {};
 const emit = (ev, data) => (listeners[ev] || []).forEach((f) => f(data));
+
+// ---- web player engine state
+let webOn = false;      // engine switched on (desktop + setting)
+let web = false;        // the current track plays in the web player
+let webPlaying = false;
+let ws = null;          // last state from the page, only while it is about our track
+let lastEnds = null;    // the page's "track ended" counter
+let lazyId = null;      // restored track not loaded into any engine yet (loads on play)
+let watchdog = 0;
+const WEB_START_TIMEOUT = 12000;
+const pushVolume = () => api.wpVolume(el.volume, el.muted).catch(() => {});
+
+// What the rest of the UI (and this file) uses instead of the <audio> element.
+const audio = {
+  get currentTime() { return web ? (ws && !ws.ad ? ws.position : 0) : el.currentTime; },
+  set currentTime(v) {
+    if (!web) { el.currentTime = v; return; }
+    if (!ws || ws.ad) return; // can't seek an ad
+    ws = { ...ws, position: v };
+    api.wpSeek(v).catch(() => {});
+    emit('time');
+  },
+  get duration() { return web ? (ws && !ws.ad && ws.duration > 0 ? ws.duration : NaN) : el.duration; },
+  get paused() { return web ? !webPlaying : el.paused; },
+  get ended() { return web ? false : el.ended; },
+  get volume() { return el.volume; },
+  set volume(v) { el.volume = v; if (web) pushVolume(); },
+  get muted() { return el.muted; },
+  set muted(m) { el.muted = m; if (web) pushVolume(); },
+  play() {
+    if (lazyId) { const id = lazyId; lazyId = null; load(id, true); return Promise.resolve(); }
+    if (!web) return el.play();
+    webPlaying = true; emit('state');
+    return api.wpPlay();
+  },
+  pause() {
+    if (!web) { el.pause(); return; }
+    webPlaying = false; emit('state');
+    api.wpPause().catch(() => {});
+  },
+};
+
+function playBuiltIn(id, autoplay) {
+  if (web) api.wpStop().catch(() => {});
+  web = false; ws = null;
+  el.src = streamUrl(id);
+  if (autoplay) el.play().catch((e) => console.warn('play()', e));
+}
+
+/** Put the current track into the right engine. */
+async function load(id, autoplay) {
+  const seq = loadedSeq;
+  clearTimeout(watchdog);
+  lazyId = null;
+  if (!webOn) { playBuiltIn(id, autoplay); return; }
+  // The web player starts playing as soon as it loads, so a restored (paused) track waits.
+  if (!autoplay) { lazyId = id; return; }
+  let handled = false;
+  try { handled = await api.wpLoad(id); } catch (e) { console.warn('web player', e); }
+  if (seq !== loadedSeq) return; // another track was started meanwhile
+  if (!handled) { playBuiltIn(id, true); emit('state'); return; } // offline copy
+  web = true; ws = null; webPlaying = true;
+  if (el.getAttribute('src')) { el.pause(); el.removeAttribute('src'); el.load(); }
+  pushVolume();
+  // If the site doesn't start the song (page broken, blocked, no network to it), play it
+  // with the built-in engine rather than sit silent.
+  watchdog = setTimeout(() => {
+    if (seq !== loadedSeq || !web || ws) return;
+    console.warn('web player did not start, using the built-in engine');
+    playBuiltIn(id, true); emit('state');
+  }, WEB_START_TIMEOUT);
+  emit('state'); emit('time');
+}
+
+function onWebState(s) {
+  const id = snap.current?.track.id;
+  if (lastEnds === null || s.ends < lastEnds) lastEnds = s.ends; // first report / page reloaded
+  if (!web || !id || s.want !== id) { lastEnds = s.ends; return; }
+  const ended = s.ends > lastEnds;
+  lastEnds = s.ends;
+  if (ended) { webPlaying = false; player.next(true); return; }
+  // The page reports the previous video until ours has loaded; an ad counts as ours.
+  if (!s.ad && s.id !== id) return;
+  const wasAd = !!ws?.ad, wasPlaying = webPlaying, first = !ws;
+  ws = s;
+  if (s.state === 1 || s.state === 3) webPlaying = true;       // playing / buffering
+  else if (s.state === 2 || s.state === 0) webPlaying = false; // paused / ended
+  if (first) failures = 0;
+  if (first || wasAd !== s.ad || wasPlaying !== webPlaying) { emit('state'); reportAll(); }
+  emit('time');
+}
 
 let snap = { items: [], index: null, current: null, shuffle: false, repeat: 'off', autoplay: true, context: null, play_seq: 0 };
 let loadedSeq = -1;
@@ -17,11 +113,14 @@ function apply(s, { autoplayAudio = true } = {}) {
   const cur = s.current;
   if (cur && s.play_seq !== loadedSeq) {
     loadedSeq = s.play_seq;
-    audio.src = streamUrl(cur.track.id);
-    if (autoplayAudio) audio.play().catch((e) => console.warn('play()', e));
+    load(cur.track.id, autoplayAudio);
     updateSession();
   }
-  if (!cur) { audio.removeAttribute('src'); audio.load(); }
+  if (!cur) {
+    clearTimeout(watchdog); lazyId = null;
+    if (web) { api.wpStop().catch(() => {}); web = false; ws = null; }
+    el.removeAttribute('src'); el.load();
+  }
   if (cur?.uid !== prevUid) emit('track', cur?.track || null);
   emit('queue');
   emit('state');
@@ -46,7 +145,24 @@ async function step(reply) {
 
 export const player = {
   on(ev, fn) { (listeners[ev] ||= []).push(fn); },
+  /** Engine-independent stand-in for the <audio> element (time, volume, play/pause). */
   get audio() { return audio; },
+  /** The real <audio> element (built-in engine only), e.g. for the equalizer. */
+  get element() { return el; },
+  /** YouTube is playing an ad in the web player. */
+  get ad() { return web && !!ws?.ad; },
+  get webEngine() { return webOn; },
+  /** Switch between the web player and the built-in engine (Settings). */
+  async setWebEngine(on) {
+    await api.wpEnable(on);
+    const cur = snap.current?.track.id, was = this.playing;
+    audio.pause();
+    if (web) { web = false; ws = null; }
+    if (on && !webOn) listen('webplayer-state', onWebState);
+    webOn = on;
+    if (cur) await load(cur, was);
+    emit('state'); emit('time');
+  },
   get queue() { return snap.items.map((i) => i.track); },
   get index() { return snap.index ?? -1; },
   get current() { return snap.current?.track || null; },
@@ -73,7 +189,7 @@ export const player = {
 
   toggle() {
     if (!snap.current) return;
-    if (audio.paused) audio.play().catch(() => {});
+    if (audio.paused) Promise.resolve(audio.play()).catch(() => {});
     else audio.pause();
   },
   seek(frac) {
@@ -82,17 +198,20 @@ export const player = {
   },
   seekTo(sec) { if (isFinite(sec)) audio.currentTime = Math.max(0, sec); },
   setVolume(v) {
-    audio.volume = Math.max(0, Math.min(1, v));
-    audio.muted = false;
-    try { localStorage.setItem('volume', String(audio.volume)); } catch { /* ignore */ }
+    el.volume = Math.max(0, Math.min(1, v));
+    el.muted = false;
+    if (web) pushVolume();
+    try { localStorage.setItem('volume', String(el.volume)); } catch { /* ignore */ }
     emit('volume');
   },
   toggleMute() { audio.muted = !audio.muted; emit('volume'); },
 
   /** Load the saved queue from Rust without auto-starting playback. */
   async restore() {
-    try { audio.volume = Number(localStorage.getItem('volume') ?? 0.8); } catch { audio.volume = 0.8; }
-    audio.preload = 'metadata';
+    try { el.volume = Number(localStorage.getItem('volume') ?? 0.8); } catch { el.volume = 0.8; }
+    el.preload = 'metadata';
+    try { const s = await api.settings(); webOn = !!(s.web_player_supported && s.web_player); } catch { webOn = false; }
+    if (webOn) listen('webplayer-state', onWebState);
     apply(await api.playerState(), { autoplayAudio: false });
     emit('volume');
     // Changes made elsewhere in Rust (e.g. background radio top-up) arrive as events.
@@ -157,18 +276,18 @@ if (isWindows) {
 }
 
 const reportAll = () => { reportPresence(); reportAndroid(); reportWindows(); };
-audio.addEventListener('play', () => emit('state'));
-audio.addEventListener('pause', () => { emit('state'); reportAll(); });
-audio.addEventListener('seeked', reportAll);
-audio.addEventListener('durationchange', () => { reportAndroid(); reportWindows(); });
-audio.addEventListener('playing', () => { failures = 0; emit('state'); reportAll(); });
-audio.addEventListener('timeupdate', () => emit('time'));
-audio.addEventListener('progress', () => emit('time'));
-audio.addEventListener('durationchange', () => emit('time'));
-audio.addEventListener('ended', () => player.next(true));
-audio.addEventListener('error', () => {
+el.addEventListener('play', () => emit('state'));
+el.addEventListener('pause', () => { emit('state'); reportAll(); });
+el.addEventListener('seeked', reportAll);
+el.addEventListener('durationchange', () => { reportAndroid(); reportWindows(); });
+el.addEventListener('playing', () => { failures = 0; emit('state'); reportAll(); });
+el.addEventListener('timeupdate', () => emit('time'));
+el.addEventListener('progress', () => emit('time'));
+el.addEventListener('durationchange', () => emit('time'));
+el.addEventListener('ended', () => player.next(true));
+el.addEventListener('error', () => {
   const t = player.current;
-  if (!t || !audio.getAttribute('src')) return;
+  if (!t || !el.getAttribute('src')) return;
   failures++;
   emit('error', t);
   // Skip broken tracks, but don't spin forever if everything fails (e.g. offline).

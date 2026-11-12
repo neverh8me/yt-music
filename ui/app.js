@@ -554,6 +554,12 @@ const views = {
         <div class="row"><input id="dl-dir" class="text-in" value="${esc(s.download_dir)}" spellcheck="false" aria-label="${esc(t('set.dlDirHint'))}">
           <button class="pill-btn" data-act="save-dl-dir">${esc(t('set.save'))}</button></div>
       </section>
+      ${s.web_player_supported ? `<section class="set-block">
+        <h2>${esc(t('eng.title'))}</h2>
+        <label class="check"><input type="checkbox" id="web-player" ${s.web_player ? 'checked' : ''}> ${esc(t('eng.web'))}</label>
+        <p class="muted small">${esc(t('eng.hint'))}</p>
+        ${s.web_player ? `<div class="row"><button class="pill-btn" data-act="wp-sign-in">${esc(t('eng.signIn'))}</button></div>` : ''}
+      </section>` : ''}
       <section class="set-block">
         <h2>${esc(t('int.title'))}</h2>
         <label class="check"><input type="checkbox" data-toggle="notify_tracks" ${s.notify_tracks ? 'checked' : ''}> ${esc(t('int.notify'))}</label>
@@ -593,6 +599,10 @@ const afterRender = {
       if (f) $('#cookie-text').value = await f.text();
     });
     $('#autoplay')?.addEventListener('change', (e) => player.setAutoplay(e.target.checked));
+    $('#web-player')?.addEventListener('change', async (e) => {
+      try { await player.setWebEngine(e.target.checked); state.settings = await api.settings(); } catch (err) { toast(errText(err), 'err'); }
+      render();
+    });
     $$('input[data-toggle]').forEach((cb) => cb.addEventListener('change', async () => {
       try {
         await api.setToggle(cb.dataset.toggle, cb.checked);
@@ -1017,6 +1027,9 @@ const actions = {
     if (window.AndroidAuth) { window.AndroidAuth.login(); return; }
     try { await api.googleLogin(); } catch (e) { toast(errText(e), 'err'); if (mode() === 'browse') render(); }
   },
+  'wp-sign-in': async () => {
+    try { await api.wpSignIn(); } catch (e) { toast(errText(e), 'err'); }
+  },
   'switch-account': async () => {
     closeOverlays();
     toast(t('acct.switchHint'));
@@ -1399,7 +1412,7 @@ function updateTime() {
     cs.setAttribute('aria-valuetext', `${fmt(c)} / ${fmt(dur)}`);
   }
   const cur = player.current;
-  if (cur) { const sub = $('#cap-sub'), names = artistNames(cur.artists); if (sub.textContent !== names) sub.textContent = names; sub.title = `${fmt(c)} / ${fmt(dur)}`; }
+  if (cur) { const sub = $('#cap-sub'), names = player.ad ? t('pl.ad') : artistNames(cur.artists); if (sub.textContent !== names) sub.textContent = names; sub.title = `${fmt(c)} / ${fmt(dur)}`; }
   if ('mediaSession' in navigator && isFinite(d) && d > 0) {
     try { navigator.mediaSession.setPositionState({ duration: d, position: Math.min(c, d), playbackRate: 1 }); } catch { /* ignore */ }
   }
@@ -1755,6 +1768,7 @@ listen('google-login', async (r) => {
   }
   if (nav.stack[nav.pos]?.view === 'settings') render();
 });
+listen('webplayer-signed-in', () => toast(t('eng.signedIn')));
 listen('google-login-closed', () => { if (nav.stack[nav.pos]?.view === 'settings') render(); });
 // Android sign-in result: the YouTube cookies from LoginActivity (null if cancelled).
 window.__androidLogin = async (cookie) => {
@@ -1774,7 +1788,7 @@ window.__androidLogin = async (cookie) => {
 (async function boot() {
   translateDom();
   hydrateIcons();
-  eq.init(audio);
+  eq.init(player.element);
   await initApi();
   state.settings = await api.settings().catch(() => ({}));
   renderAccount();
