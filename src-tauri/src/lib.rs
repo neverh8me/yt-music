@@ -130,8 +130,6 @@ pub fn run() {
             #[cfg(desktop)]
             webplayer::webplayer_volume,
             #[cfg(desktop)]
-            webplayer::webplayer_sign_in,
-            #[cfg(desktop)]
             webplayer::webplayer_enable,
             commands::stream_base,
             commands::search,

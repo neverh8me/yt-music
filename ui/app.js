@@ -558,7 +558,6 @@ const views = {
         <h2>${esc(t('eng.title'))}</h2>
         <label class="check"><input type="checkbox" id="web-player" ${s.web_player ? 'checked' : ''}> ${esc(t('eng.web'))}</label>
         <p class="muted small">${esc(t('eng.hint'))}</p>
-        ${s.web_player ? `<div class="row"><button class="pill-btn" data-act="wp-sign-in">${esc(t('eng.signIn'))}</button></div>` : ''}
       </section>` : ''}
       <section class="set-block">
         <h2>${esc(t('int.title'))}</h2>
@@ -1026,9 +1025,6 @@ const actions = {
     // Android: native sign-in screen (LoginActivity); it calls window.__androidLogin back.
     if (window.AndroidAuth) { window.AndroidAuth.login(); return; }
     try { await api.googleLogin(); } catch (e) { toast(errText(e), 'err'); if (mode() === 'browse') render(); }
-  },
-  'wp-sign-in': async () => {
-    try { await api.wpSignIn(); } catch (e) { toast(errText(e), 'err'); }
   },
   'switch-account': async () => {
     closeOverlays();
@@ -1768,7 +1764,14 @@ listen('google-login', async (r) => {
   }
   if (nav.stack[nav.pos]?.view === 'settings') render();
 });
-listen('webplayer-signed-in', () => toast(t('eng.signedIn')));
+// One time after an update: the old sign-in did not cover the web player (webplayer.rs).
+listen('signed-out', async () => {
+  state.settings = await api.settings();
+  state.remotePlaylists = [];
+  renderAccount(); renderDock();
+  if (mode() === 'browse') render();
+  toast(t('eng.signInAgain'));
+});
 listen('google-login-closed', () => { if (nav.stack[nav.pos]?.view === 'settings') render(); });
 // Android sign-in result: the YouTube cookies from LoginActivity (null if cancelled).
 window.__androidLogin = async (cookie) => {

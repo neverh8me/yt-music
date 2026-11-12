@@ -27,6 +27,8 @@ use tauri::{AppHandle, Emitter, Manager, State, Url, WebviewUrl, WebviewWindowBu
 pub const LABEL: &str = "ytm-player";
 const HOME: &str = "https://music.youtube.com/";
 const SETTING: &str = "web_player";
+/// Set once the account was signed in through the player window (see `migrate`).
+pub const WEB_LOGIN: &str = "web_login";
 
 /// Runs in the page before its own scripts, on every navigation of the player window.
 /// Everything that depends on the site's internals lives here (see ytmdesktop for the same
@@ -144,6 +146,8 @@ pub fn ensure(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
             api.prevent_close();
             let _ = w2.hide();
             SHARED.lock().unwrap().signing_in = false;
+            // lets Settings re-enable its sign-in button
+            let _ = w2.app_handle().emit("google-login-closed", ());
         }
     });
     if !POLLING.swap(true, Ordering::SeqCst) {
@@ -174,24 +178,12 @@ fn on_state(app: &AppHandle, json: String) {
     if !v.is_object() {
         return;
     }
-    let hide = {
+    {
         let mut sh = SHARED.lock().unwrap();
         if sh.last_json == json {
             return;
         }
         sh.last_json = json;
-        // Sign-in finished: back on YouTube Music with a session.
-        let done = sh.signing_in && v["host"] == "music.youtube.com" && v["signed_in"] == true;
-        if done {
-            sh.signing_in = false;
-        }
-        done
-    };
-    if hide {
-        if let Some(w) = app.get_webview_window(LABEL) {
-            let _ = w.hide();
-        }
-        let _ = app.emit("webplayer-signed-in", ());
     }
     let _ = app.emit("webplayer-state", v);
 }
@@ -201,11 +193,75 @@ fn run(app: &AppHandle, js: String) -> Result<(), String> {
 }
 
 /// Start the engine at launch so the first song starts at once.
-pub fn init(app: &AppHandle, core: &Core) {
-    if enabled(core)
-        && let Err(e) = ensure(app)
-    {
+pub fn init(app: &AppHandle, core: &Arc<Core>) {
+    if !enabled(core) {
+        return;
+    }
+    if let Err(e) = ensure(app) {
         eprintln!("web player window failed: {e}");
+        return;
+    }
+    tauri::async_runtime::spawn(migrate(app.clone(), core.clone()));
+}
+
+/// One time, after updating from a version with the cookie-only sign-in: the account is
+/// signed in for the library but the player window has no session, and without one the
+/// site stops songs part-way. Sign the account out so the next sign-in covers both.
+/// Never repeats: afterwards either nothing is signed in or `WEB_LOGIN` is set.
+async fn migrate(app: AppHandle, core: Arc<Core>) {
+    if core.db.get_setting(WEB_LOGIN).is_some() || core.db.get_setting("logged_in").is_none() {
+        return;
+    }
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    let Ok(cookies) = crate::auth::youtube_cookies(&app, LABEL).await else { return };
+    if cookies.iter().any(|(n, _)| n == "SAPISID" || n == "__Secure-3PAPISID") {
+        // the player window already has a session
+        let _ = core.db.set_setting(WEB_LOGIN, "1");
+        return;
+    }
+    if crate::commands::forget_account(&core).await.is_ok() {
+        let _ = app.emit("signed-out", ());
+    }
+}
+
+pub fn signing_in() -> bool {
+    SHARED.lock().unwrap().signing_in
+}
+
+/// Show the player window on YouTube Music's own sign-in link.
+pub fn sign_in(app: &AppHandle) -> Result<(), String> {
+    let w = ensure(app)?;
+    let url = Url::parse(crate::auth::START).map_err(|e| e.to_string())?;
+    w.navigate(url).map_err(|e| e.to_string())?;
+    SHARED.lock().unwrap().signing_in = true;
+    w.show().map_err(|e| e.to_string())?;
+    let _ = w.set_focus();
+    Ok(())
+}
+
+/// Sign-in is over (auth.rs has the session): hide the window again.
+pub fn finish_sign_in(app: &AppHandle) {
+    let was = std::mem::replace(&mut SHARED.lock().unwrap().signing_in, false);
+    if was && let Some(w) = app.get_webview_window(LABEL) {
+        let _ = w.hide();
+    }
+}
+
+/// Log out: remove Google's and YouTube's cookies from the player window and reload it.
+pub async fn sign_out(app: &AppHandle) {
+    let Some(w) = app.get_webview_window(LABEL) else { return };
+    let w2 = w.clone();
+    // WebView2 deadlocks if cookies are read on an event-handler thread; use a worker thread.
+    if let Ok(Ok(all)) = tauri::async_runtime::spawn_blocking(move || w2.cookies()).await {
+        for c in all {
+            let d = c.domain().unwrap_or("").trim_start_matches('.').to_string();
+            if ["youtube.com", "google.com"].iter().any(|s| d == *s || d.ends_with(&format!(".{s}"))) {
+                let _ = w.delete_cookie(c);
+            }
+        }
+    }
+    if let Ok(url) = Url::parse(HOME) {
+        let _ = w.navigate(url);
     }
 }
 
@@ -255,19 +311,6 @@ pub async fn webplayer_volume(app: AppHandle, volume: f64, muted: bool) -> Resul
         return Ok(());
     }
     run(&app, format!("volume({},{muted})", volume.clamp(0.0, 1.0)))
-}
-
-/// Show the player window on YouTube Music's own sign-in link; it hides itself again once
-/// the page is signed in (see `on_state`). The session then lives in the webview profile.
-#[tauri::command]
-pub async fn webplayer_sign_in(app: AppHandle) -> Result<(), String> {
-    let w = ensure(&app)?;
-    let url = Url::parse(crate::auth::START).map_err(|e| e.to_string())?;
-    w.navigate(url).map_err(|e| e.to_string())?;
-    SHARED.lock().unwrap().signing_in = true;
-    w.show().map_err(|e| e.to_string())?;
-    let _ = w.set_focus();
-    Ok(())
 }
 
 /// The engine switch in Settings. Off: the window is destroyed (frees its memory).

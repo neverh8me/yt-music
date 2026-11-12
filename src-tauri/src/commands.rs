@@ -456,7 +456,15 @@ pub async fn refresh_account(core: St<'_>) -> Res<()> {
 }
 
 #[tauri::command]
-pub async fn logout(core: St<'_>) -> Res<()> {
+pub async fn logout(app: tauri::AppHandle, core: St<'_>) -> Res<()> {
+    #[cfg(desktop)]
+    crate::webplayer::sign_out(&app).await;
+    let _ = &app;
+    forget_account(&core).await
+}
+
+/// Drop the library session (rustypipe) and what we remember about the account.
+pub async fn forget_account(core: &Core) -> Res<()> {
     core.yt.logout().await.map_err(e)?;
     core.db.del_setting("logged_in").map_err(e)?;
     core.db.del_setting("account_name").map_err(e)?;

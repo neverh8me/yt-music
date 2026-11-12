@@ -36,6 +36,9 @@ struct LoginResult {
 
 fn done(app: &AppHandle, ok: bool, error: Option<String>) {
     let _ = app.emit("google-login", LoginResult { ok, error });
+    // Signed in through the web player window (desktop): it stays, hidden, with the session.
+    #[cfg(desktop)]
+    crate::webplayer::finish_sign_in(app);
     if let Some(w) = app.get_webview_window(LABEL) {
         let _ = w.close();
     }
@@ -52,9 +55,9 @@ fn log(core: &Core, msg: &str) {
     }
 }
 
-/// Session cookies for YouTube, from the login window's cookie store.
-async fn youtube_cookies(app: &AppHandle) -> Result<Vec<(String, String)>, String> {
-    let w = app.get_webview_window(LABEL).ok_or("login window closed")?;
+/// Session cookies for YouTube, from the cookie store of the window `label`.
+pub(crate) async fn youtube_cookies(app: &AppHandle, label: &str) -> Result<Vec<(String, String)>, String> {
+    let w = app.get_webview_window(label).ok_or("login window closed")?;
     // WebView2 deadlocks if cookies are read on an event-handler thread; use a worker thread.
     let all = tauri::async_runtime::spawn_blocking(move || w.cookies())
         .await
@@ -73,7 +76,7 @@ async fn youtube_cookies(app: &AppHandle) -> Result<Vec<(String, String)>, Strin
 /// After the window reaches music.youtube.com, poll its cookies until the signed-in
 /// session (SAPISID) shows up — it can arrive a moment after the page "finishes"
 /// loading — then log rustypipe in with them.
-async fn capture(app: AppHandle, core: Arc<Core>) {
+pub(crate) async fn capture(app: AppHandle, core: Arc<Core>, label: &'static str) {
     use std::sync::atomic::Ordering;
     if POLLING.swap(true, Ordering::SeqCst) {
         return;
@@ -82,13 +85,19 @@ async fn capture(app: AppHandle, core: Arc<Core>) {
     let mut last_names = String::new();
     for _ in 0..400 {
         // ~10 minutes; stops earlier if the window is closed
-        let cookies = match youtube_cookies(&app).await {
+        let cookies = match youtube_cookies(&app, label).await {
             Ok(c) => c,
             Err(e) => {
                 log(&core, &format!("stop: {e}"));
                 break;
             }
         };
+        // The web player window is never closed, only hidden: hidden = sign-in cancelled.
+        #[cfg(desktop)]
+        if label == crate::webplayer::LABEL && !crate::webplayer::signing_in() {
+            log(&core, "stop: sign-in window closed");
+            break;
+        }
         let names = cookies.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>().join(",");
         if names != last_names {
             log(&core, &format!("cookie names: {names}"));
@@ -101,6 +110,11 @@ async fn capture(app: AppHandle, core: Arc<Core>) {
                 Ok(()) => {
                     log(&core, "signed in");
                     let _ = core.db.set_setting("logged_in", "1");
+                    // The same sign-in covers the web player (see webplayer::migrate).
+                    #[cfg(desktop)]
+                    if label == crate::webplayer::LABEL {
+                        let _ = core.db.set_setting(crate::webplayer::WEB_LOGIN, "1");
+                    }
                     if let Err(e) = crate::commands::refresh_account_info(&core).await {
                         log(&core, &format!("account info unavailable: {e}"));
                     }
@@ -125,7 +139,7 @@ async fn capture(app: AppHandle, core: Arc<Core>) {
 async fn retry_signin(app: AppHandle) {
     use std::sync::atomic::Ordering;
     tokio::time::sleep(std::time::Duration::from_secs(4)).await;
-    let signed_in = youtube_cookies(&app).await.map(|c| c.iter().any(|(n, _)| n == "SAPISID" || n == "__Secure-3PAPISID"));
+    let signed_in = youtube_cookies(&app, LABEL).await.map(|c| c.iter().any(|(n, _)| n == "SAPISID" || n == "__Secure-3PAPISID"));
     if signed_in != Ok(false) || RETRIED.swap(true, Ordering::SeqCst) {
         return;
     }
@@ -144,6 +158,14 @@ pub async fn google_login(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<
 
 #[cfg(not(target_os = "ios"))]
 async fn desktop_login(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<(), String> {
+    // Desktop with the web player engine: one sign-in, in the player's own window. The
+    // session stays in that webview (playback) and its cookies also go to rustypipe (library).
+    #[cfg(desktop)]
+    if crate::webplayer::enabled(&core) {
+        crate::webplayer::sign_in(&app)?;
+        tauri::async_runtime::spawn(capture(app.clone(), core.inner().clone(), crate::webplayer::LABEL));
+        return Ok(());
+    }
     if let Some(w) = app.get_webview_window(LABEL) {
         let _ = w.set_focus();
         return Ok(());
@@ -170,7 +192,7 @@ async fn desktop_login(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<(),
         .on_page_load(move |_w, payload| {
             let host = payload.url().host_str().unwrap_or("");
             if payload.event() == PageLoadEvent::Finished && host == "music.youtube.com" {
-                tauri::async_runtime::spawn(capture(handler_app.clone(), core.clone()));
+                tauri::async_runtime::spawn(capture(handler_app.clone(), core.clone(), LABEL));
                 tauri::async_runtime::spawn(retry_signin(handler_app.clone()));
             }
         })
@@ -185,7 +207,7 @@ async fn desktop_login(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<(),
     });
     // Watch for the session from the start, not only on page-load events
     // (music.youtube.com is a single-page app; the session may appear without a reload).
-    tauri::async_runtime::spawn(capture(app.clone(), poll_core));
+    tauri::async_runtime::spawn(capture(app.clone(), poll_core, LABEL));
     Ok(())
 }
 

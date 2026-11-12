@@ -50,7 +50,6 @@ export const api = {
   wpStop: () => invoke('webplayer_stop'),
   wpSeek: (seconds) => invoke('webplayer_seek', { seconds }),
   wpVolume: (volume, muted) => invoke('webplayer_volume', { volume, muted }),
-  wpSignIn: () => invoke('webplayer_sign_in'),
   wpEnable: (on) => invoke('webplayer_enable', { on }),
 
   // Library
