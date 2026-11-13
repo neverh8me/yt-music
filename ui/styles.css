@@ -487,7 +487,7 @@ body[data-mode="browse"]:not(.idle) #capsule { transform: translate(-50%, 0); op
 .home-head { display: flex; justify-content: space-between; align-items: flex-end; gap: var(--s4); flex-wrap: wrap; }
 .home-head h1 { font-size: var(--fs-display); letter-spacing: -.03em; font-weight: 700; }
 .home-head .actions { margin-top: 0; }
-.carousel-track { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(160px, 176px); gap: var(--s5); overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none; padding: var(--s2); margin: 0 calc(-1 * var(--s2)); }
+.carousel-track { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(160px, 176px); gap: var(--s5); overflow-x: auto; scroll-snap-type: x proximity; scroll-padding-inline: var(--s2); scrollbar-width: none; padding: var(--s2); margin: 0 calc(-1 * var(--s2)); }
 .carousel-track::-webkit-scrollbar { display: none; }
 .carousel-track > * { scroll-snap-align: start; margin: 0; }
 .scroll-btns { display: flex; gap: var(--s1); }
@@ -981,3 +981,6 @@ body.frame-mac.fullscreen #topbar { padding-left: var(--gutter); }
 /* The shade must lie over the cover: `.mix-card > *` lifts every child, the image included,
    above the ::after shade, so put the image back on the bottom layer. */
 .mix-card img { z-index: 0; }
+
+/* It's an app, not a page: no pinch or double-tap zoom (scrolling stays). */
+html { touch-action: pan-x pan-y; }

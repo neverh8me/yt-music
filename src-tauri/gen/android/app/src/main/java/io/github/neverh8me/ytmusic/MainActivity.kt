@@ -56,6 +56,13 @@ class MainActivity : TauriActivity() {
     webView.addJavascriptInterface(AuthBridge(), "AndroidAuth")
   }
 
+  // The base activity pauses the WebView when the app leaves the screen. The page is the
+  // player: paused, it can't start the next song when one ends. Keep it running.
+  override fun onPause() {
+    super.onPause()
+    webView?.onResume()
+  }
+
   override fun onDestroy() {
     MediaPlaybackService.onAction = null
     MediaPlaybackService.stop(this)

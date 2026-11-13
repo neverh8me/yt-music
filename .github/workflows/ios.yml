@@ -50,6 +50,11 @@ jobs:
         # part too (with npx it would call `npm run tauri`, and there is no package.json).
         run: cargo tauri ios init --ci
 
+      # The generated project comes with Tauri's placeholder icons; put ours in.
+      - name: App icon
+        working-directory: src-tauri
+        run: cp icons/ios/*.png gen/apple/Assets.xcassets/AppIcon.appiconset/
+
       # No Apple account in CI: switch code signing off in the generated project itself
       # (tauri's xcodebuild call doesn't pass an XCODE_XCCONFIG_FILE through).
       - name: Disable code signing

@@ -529,12 +529,12 @@ const views = {
           <button class="pill-btn" data-act="signout-confirm">${esc(t('set.logout'))}</button></div>`
         : `${s.google_login_supported ? `<p class="muted">${esc(t('set.googleHint'))}</p>
           <div class="row"><button class="google-btn" data-act="google-login">${GOOGLE_G}<span>${esc(t('set.google'))}</span></button></div>` : ''}
-          <details class="advanced" ${s.google_login_supported ? '' : 'open'}><summary>${esc(t('set.advanced'))}</summary>
+          ${s.google_login_supported ? '' : `<details class="advanced" open><summary>${esc(t('set.advanced'))}</summary>
           <p class="muted small">${esc(t('set.loginHint'))}</p>
           <ol class="muted small"><li>${esc(t('set.step1'))}</li><li>${esc(t('set.step2'))}</li><li>${esc(t('set.step3'))}</li></ol>
           <div class="row"><label class="pill-btn">${esc(t('set.pickFile'))}<input type="file" id="cookie-file" accept=".txt" hidden></label></div>
           <textarea id="cookie-text" placeholder="${esc(t('set.cookiePh'))}" aria-label="${esc(t('set.cookiePh'))}"></textarea>
-          <div class="row"><button class="pill-btn" data-act="login">${esc(t('set.login'))}</button></div></details>`}
+          <div class="row"><button class="pill-btn" data-act="login">${esc(t('set.login'))}</button></div></details>`}`}
       </section>
       <section class="set-block">
         <h2>${esc(t('set.playback'))}</h2>
@@ -566,14 +566,14 @@ const views = {
         ${s.hotkeys_supported ? `<label class="check"><input type="checkbox" data-toggle="global_hotkeys" ${s.global_hotkeys ? 'checked' : ''}> ${esc(t('int.hotkeys'))}</label>
           <p class="muted small"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> ${esc(t('int.hkToggle'))} · <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>→</kbd> ${esc(t('int.hkNext'))} · <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>←</kbd> ${esc(t('int.hkPrev'))} · <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>L</kbd> ${esc(t('int.hkLike'))}</p>` : ''}
       </section>
-      <section class="set-block">
+      ${/iPhone|iPad|iPod/.test(navigator.userAgent) ? '' : `<section class="set-block">
         <h2>${esc(t('upd.title'))}</h2>
         <p id="upd-status" class="muted">${esc(updateStatusText())}</p>
         <div class="row">
           <button class="pill-btn" data-act="check-update">${icon('sync')} ${esc(t('upd.check'))}</button>
           ${upd.info?.available ? `<button class="pill-btn primary" data-act="install-update">${esc(t(upd.info.kind === 'apk' ? 'upd.apk' : 'upd.install'))}</button>` : ''}
         </div>
-      </section>
+      </section>`}
       ${s.ytdlp_supported === false ? '' : `<section class="set-block">
         <h2>${esc(t('set.ytdlp'))}</h2>
         <p class="muted small">${esc(t('set.ytdlpHint'))}</p>
@@ -1593,7 +1593,7 @@ function swipe(el, dir, fn) {
     if (dir > 0 ? dy > 70 : dy < -30) { y0 = null; fn(); }
   });
 }
-swipe($('.stage-art-wrap'), 1, () => go(nav.stack[nav.pos]?.view && LAYERS.includes(nav.stack[nav.pos].view) ? nav.stack[nav.pos].view : 'home'));
+swipe($('.stage-art-wrap'), 1, () => actions['to-browse']());
 swipe($('#capsule'), -1, toStage);
 
 player.on('track', () => { updateNowPlaying(); renderSide(); if (mode() === 'browse') updateState(); });
@@ -1803,8 +1803,7 @@ window.__androidLogin = async (cookie) => {
   updateNowPlaying();
   updateState();
   renderSide();
-  // Something to play → the stage; otherwise open "For you".
-  go('home');
+  go(navigator.onLine ? 'home' : 'downloads');
   api.sleepState().then(showSleep).catch(() => {});
   setTimeout(syncAutoDl, 8000);
   // Signed in before account info existed (or the avatar changed): fetch it once per start.

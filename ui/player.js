@@ -321,11 +321,20 @@ el.addEventListener('error', () => {
   if (failures < 4) setTimeout(() => player.next(true), 800);
 });
 
-if ('mediaSession' in navigator) {
+function bindSession() {
+  if (!('mediaSession' in navigator)) return;
   const ms = navigator.mediaSession;
   ms.setActionHandler('play', () => audio.play());
   ms.setActionHandler('pause', () => audio.pause());
   ms.setActionHandler('nexttrack', () => player.next());
   ms.setActionHandler('previoustrack', () => player.prev());
-  try { ms.setActionHandler('seekto', (d) => { audio.currentTime = d.seekTime; }); } catch { /* unsupported */ }
+  try {
+    ms.setActionHandler('seekto', (d) => { audio.currentTime = d.seekTime; });
+    // iOS shows -10 s / +10 s instead of previous / next while these two are set
+    ms.setActionHandler('seekbackward', null);
+    ms.setActionHandler('seekforward', null);
+  } catch { /* unsupported */ }
 }
+bindSession();
+// iOS only takes the handlers once audio is playing.
+el.addEventListener('playing', bindSession);
