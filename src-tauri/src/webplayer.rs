@@ -50,7 +50,12 @@ const PAGE_JS: &str = r#"(function () {
   }
   function applyVolume(p) {
     if (vol === null) return;
-    try { p.setVolume(Math.round(vol * 100)); if (muted) p.mute(); else p.unMute(); } catch (e) {}
+    // Volume 0 is sent as mute: the site's unMute() brings a zero volume back up by itself.
+    try {
+      if (muted || vol <= 0) { p.mute(); return; }
+      p.unMute();
+      p.setVolume(Math.round(vol * 100));
+    } catch (e) {}
   }
   function start(p, id) {
     endSeen = false; sawWant = false;
