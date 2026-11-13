@@ -327,7 +327,7 @@ const views = {
     const sections = home.sections || [];
     const titleOf = (s) => t(`sec.${s.title}`, { name: s.param || '' });
     // Personal sections (built in Rust from your history and likes) become big "mix" cards.
-    const PERSONAL = ['your_mix', 'more_like', 'your_artists', 'rediscover'];
+    const PERSONAL = ['your_mix', 'artist_mix', 'more_like', 'your_artists', 'rediscover'];
     const mixes = sections.filter((s) => PERSONAL.includes(s.title) && s.tracks?.length);
     const MIX = ['#ff2e4d', '#5b8cff', '#9e73ff', '#ff8a3d', '#1f9d5a', '#e0457b'];
     let html = `<div class="page home">
@@ -622,9 +622,9 @@ function renderDock() {
     item('data-nav="liked"', `<span class="qc liked-cover">${icon('heart-fill')}</span>`, t('lib.liked'), `${t('lib.playlist')} · ${tracksLabel(state.liked.size)}`),
     item('data-nav="downloads"', `<span class="qc dl-cover">${icon('download')}</span>`, t('lib.downloads'), `${t('lib.offline')} · ${tracksLabel(state.downloaded.size)}`),
     item('data-nav="history"', `<span class="qc hist-cover">${icon('history')}</span>`, t('lib.history'), t('lib.historySub')),
-    ...state.playlists.map((p) => item(`data-go="local-playlist" data-id="${p.id}"`, p.cover ? `<img src="${esc(thumb(p.cover))}" alt="" loading="lazy" data-onerr="hide">` : `<span class="qc">${icon('music')}</span>`, p.name, `${t('lib.playlist')} · ${tracksLabel(p.count)}`)),
+    ...state.playlists.map((p) => item(`data-go="local-playlist" data-id="${p.id}"`, p.cover ? `<img src="${esc(thumb(p.cover))}" alt="" loading="lazy" data-onerr="placeholder">` : `<span class="qc">${icon('music')}</span>`, p.name, `${t('lib.playlist')} · ${tracksLabel(p.count)}`)),
     state.remotePlaylists.length ? `<div class="mono rail-sep">${esc(t('lib.yt'))}</div>` : '',
-    ...state.remotePlaylists.map((p) => item(`data-go="playlist" data-id="${esc(p.id)}"`, p.cover ? `<img src="${esc(thumb(p.cover))}" alt="" loading="lazy" data-onerr="hide">` : `<span class="qc">${icon('music')}</span>`, p.title, p.author || t('lib.playlist'))),
+    ...state.remotePlaylists.map((p) => item(`data-go="playlist" data-id="${esc(p.id)}"`, p.cover ? `<img src="${esc(thumb(p.cover))}" alt="" loading="lazy" data-onerr="placeholder">` : `<span class="qc">${icon('music')}</span>`, p.title, p.author || t('lib.playlist'))),
   ].join('');
   markRail();
 }
@@ -1109,6 +1109,7 @@ document.addEventListener('error', (e) => {
     if (img.dataset.fallback) img.src = img.dataset.fallback; else img.style.visibility = 'hidden';
     return;
   }
+  if (img.dataset.onerr === 'placeholder') { img.outerHTML = `<span class="qc">${icon('music')}</span>`; return; }
   if (img.dataset.onerr === 'remove') img.remove();
   else if (img.dataset.onerr === 'hide') img.style.visibility = 'hidden';
 }, true);
@@ -1799,6 +1800,7 @@ window.__androidLogin = async (cookie) => {
   renderAccount();
   await refreshLibrary().catch((e) => console.error(e));
   refreshRemote();
+  if (state.settings.logged_in) api.syncAccount().then(refreshRemote).catch(() => {});
   await player.restore().catch((e) => console.error(e));
   updateNowPlaying();
   updateState();

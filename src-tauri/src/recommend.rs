@@ -2,6 +2,7 @@
 //! (nothing about your taste leaves the device except the YouTube lookups for seeds).
 //!
 //! - your_mix:     radio blended from your most-played and some liked tracks
+//! - artist_mix:   one per favourite artist: radio from your most-played song of theirs
 //! - more_like:    artists similar to your top artist
 //! - your_artists: albums from the artists you play most
 //! - rediscover:   liked tracks you haven't played for a month
@@ -12,7 +13,7 @@ use crate::models::{AlbumCard, HomeSection, Track};
 use crate::state::Core;
 use std::collections::{HashMap, HashSet};
 
-const CACHE_KEY: &str = "home_personal";
+const CACHE_KEY: &str = "home_personal_v2"; // v2: artist mixes; an old cache would hide them for 3 h
 const TTL_MS: i64 = 3 * 3600 * 1000;
 const DAY_MS: i64 = 24 * 3600 * 1000;
 
@@ -90,17 +91,32 @@ async fn build(core: &Core) -> Vec<HomeSection> {
             seeds.push(t.clone());
         }
     }
-    let artists = top_artists(&played, &liked, 3);
+    let artists = top_artists(&played, &liked, 4);
+    // Your most played (else liked) song by each favourite artist seeds that artist's mix.
+    let artist_seeds: Vec<(String, String)> = artists
+        .iter()
+        .filter_map(|(id, name)| {
+            let by = |t: &Track| t.artists.iter().any(|a| a.id.as_deref() == Some(id.as_str()));
+            let t = played.iter().map(|(t, _)| t).find(|t| by(t)).or_else(|| liked.iter().find(|t| by(t)))?;
+            Some((name.clone(), t.id.clone()))
+        })
+        .collect();
 
     let radios = futures_util::future::join_all(seeds.iter().map(|s| core.yt.radio(&s.id)));
-    let pages = futures_util::future::join_all(artists.iter().map(|(id, _)| core.yt.artist(id)));
-    let (radios, pages) = tokio::join!(radios, pages);
+    let artist_radios = futures_util::future::join_all(artist_seeds.iter().map(|(_, seed)| core.yt.radio(seed)));
+    let pages = futures_util::future::join_all(artists.iter().take(3).map(|(id, _)| core.yt.artist(id)));
+    let (radios, artist_radios, pages) = tokio::join!(radios, artist_radios, pages);
 
     let mut out = Vec::new();
 
     let mix = interleave(radios.into_iter().filter_map(Result::ok).collect(), 30);
     if !mix.is_empty() {
         out.push(HomeSection { title: "your_mix".into(), tracks: mix, ..Default::default() });
+    }
+    for ((name, _), radio) in artist_seeds.iter().zip(artist_radios) {
+        if let Some(tracks) = radio.ok().filter(|t| t.len() >= 5) {
+            out.push(HomeSection { title: "artist_mix".into(), param: Some(name.clone()), tracks, ..Default::default() });
+        }
     }
 
     let pages: Vec<_> = pages.into_iter().filter_map(Result::ok).collect();
