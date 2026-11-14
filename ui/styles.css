@@ -997,3 +997,25 @@ html { touch-action: pan-x pan-y; }
   .mixes { grid-auto-columns: 62%; }
   .picks .tracklist { grid-auto-columns: 85%; }
 }
+
+/* Select mode: a tick box in place of the song number, a bar of actions above the player. */
+body.selecting #main .trow { cursor: pointer; }
+body.selecting #main .trow .tnum > *, body.selecting #main .trow .tright { visibility: hidden; }
+body.selecting #main .trow .tnum::before { content: ""; grid-area: 1 / 1; width: 18px; height: 18px; border-radius: 5px; border: 2px solid var(--muted);
+  display: grid; place-items: center; color: var(--on-accent); font: 700 12px/1 var(--font); }
+body.selecting #main .trow.sel .tnum::before { content: "✓"; background: var(--accent); border-color: var(--accent); }
+body.selecting #main .trow.sel { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+#selbar { position: absolute; z-index: 8; left: calc(50% + var(--rail) / 2); transform: translateX(-50%); bottom: calc(104px + env(safe-area-inset-bottom, 0px));
+  display: flex; align-items: center; gap: var(--s2); padding: 8px 8px 8px 18px; max-width: calc(100% - var(--rail) - 32px); overflow-x: auto; scrollbar-width: none;
+  border-radius: var(--r-full); background: var(--surface-dense); border: 1px solid var(--stroke); backdrop-filter: var(--blur); box-shadow: 0 10px 30px var(--shadow); }
+#selbar b { white-space: nowrap; margin-right: var(--s2); }
+#selbar .pill-btn { white-space: nowrap; }
+#selbar .pill-btn.danger { color: var(--danger); }
+@media (max-width: 760px) {
+  #selbar { bottom: calc(146px + env(safe-area-inset-bottom, 0px)); flex-wrap: wrap; justify-content: center; border-radius: var(--r-lg); padding: 10px; width: calc(100% - 24px); }
+  #selbar b { width: 100%; text-align: center; margin: 0; }
+  /* phones hide the number column; bring it back for the tick box */
+  body.selecting #main .trow, body.selecting #main .tracklist.noalbum .trow { grid-template-columns: 28px minmax(0, 1fr); }
+  body.selecting #main .trow .tnum { display: grid; }
+  body.selecting #main .trow .tright { display: none; }
+}

@@ -30,6 +30,8 @@ impl Db {
             PRAGMA foreign_keys = ON;
             CREATE TABLE IF NOT EXISTS tracks (id TEXT PRIMARY KEY, data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS likes (track_id TEXT PRIMARY KEY, ts INTEGER NOT NULL);
+            -- unliked here while still liked on YouTube: the sync must not bring them back
+            CREATE TABLE IF NOT EXISTS unliked (track_id TEXT PRIMARY KEY);
             CREATE TABLE IF NOT EXISTS playlists (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -92,8 +94,10 @@ impl Db {
                 "INSERT OR IGNORE INTO likes(track_id, ts) VALUES (?1, ?2)",
                 params![t.id, now()],
             )?;
+            conn.execute("DELETE FROM unliked WHERE track_id = ?1", [&t.id])?;
         } else {
             conn.execute("DELETE FROM likes WHERE track_id = ?1", [&t.id])?;
+            conn.execute("INSERT OR IGNORE INTO unliked(track_id) VALUES (?1)", [&t.id])?;
         }
         Ok(())
     }
@@ -107,7 +111,8 @@ impl Db {
         for (i, t) in tracks.iter().rev().enumerate() {
             Self::upsert_track(&tx, t)?;
             added += tx.execute(
-                "INSERT OR IGNORE INTO likes(track_id, ts) VALUES (?1, ?2)",
+                "INSERT OR IGNORE INTO likes(track_id, ts) SELECT ?1, ?2
+                 WHERE NOT EXISTS (SELECT 1 FROM unliked WHERE track_id = ?1)",
                 params![t.id, base + i as i64],
             )?;
         }
@@ -393,5 +398,29 @@ impl Db {
     pub fn del_setting(&self, key: &str) -> Result<()> {
         self.c().execute("DELETE FROM settings WHERE key = ?1", [key])?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn t(id: &str) -> Track {
+        Track { id: id.into(), title: id.into(), artists: vec![], album: None, duration: None, cover: None, plays: None }
+    }
+
+    #[test]
+    fn sync_does_not_bring_back_an_unlike() {
+        let dir = std::env::temp_dir().join(format!("ytubem-db-{}", now()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = Db::open(&dir.join("t.db")).unwrap();
+        db.import_likes(&[t("a"), t("b")]).unwrap();
+        db.set_liked(&t("a"), false).unwrap();
+        db.import_likes(&[t("a"), t("b")]).unwrap(); // YouTube still has "a" liked
+        assert_eq!(db.liked_ids().unwrap(), ["b"]);
+        db.set_liked(&t("a"), true).unwrap(); // liked again here: syncs normally
+        let mut ids = db.liked_ids().unwrap();
+        ids.sort();
+        assert_eq!(ids, ["a", "b"]);
     }
 }

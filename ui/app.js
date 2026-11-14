@@ -157,6 +157,7 @@ const LAYERS = ['library', 'history', 'downloads'];
 const layerName = (v) => ({ home: t('layer.forYou'), library: t('nav.library'), history: t('lib.history'), downloads: t('lib.downloads') }[v]);
 
 function go(view, params = {}, push = true) {
+  if (selecting()) selectMode(false);
   if (push) {
     nav.stack = nav.stack.slice(0, nav.pos + 1);
     nav.stack.push({ view, params, scroll: 0 });
@@ -283,8 +284,66 @@ const actBtn = (act, ic, title, extra = '') => `<button class="pill-btn" data-ac
 const collectionActions = () => {
   const on = autoDl.has(dlKey(pageCtx));
   return playBtn('play-page') + actBtn('shuffle-page', 'shuffle', t('act.shuffle'))
-    + `<button class="pill-btn dl-toggle ${on ? 'on' : ''}" data-act="download-page" aria-pressed="${on}">${dlToggleInner(on)}</button>`;
+    + `<button class="pill-btn dl-toggle ${on ? 'on' : ''}" data-act="download-page" aria-pressed="${on}">${dlToggleInner(on)}</button>`
+    + actBtn('select-mode', 'check', t('act.select'));
 };
+
+// ---------------------------------------------------------------- select mode
+// Tick several songs of the open page (or all of them) and act on them at once.
+const sel = new Set(); // indexes into pageTracks
+const selecting = () => document.body.classList.contains('selecting');
+function selectMode(on) {
+  sel.clear();
+  document.body.classList.toggle('selecting', on);
+  $$('.trow.sel').forEach((r) => r.classList.remove('sel'));
+  renderSelBar();
+}
+// What "Remove" means on this page; none → no Remove button.
+const selRemovable = () => ['liked', 'local', 'downloads'].includes(pageCtx?.kind);
+function renderSelBar() {
+  let bar = $('#selbar');
+  if (!selecting()) { bar?.remove(); return; }
+  if (!bar) { bar = document.createElement('div'); bar.id = 'selbar'; bar.setAttribute('role', 'toolbar'); $('#app').appendChild(bar); }
+  const n = sel.size, none = n ? '' : 'disabled';
+  bar.innerHTML = `<b>${esc(t('sel.count', { n }))}</b>
+    <button class="pill-btn" data-act="sel-all">${esc(t(n && n === pageTracks.length ? 'sel.none' : 'sel.all'))}</button>
+    <button class="pill-btn" data-act="sel-next" ${none}>${esc(t('menu.playNext'))}</button>
+    <button class="pill-btn" data-act="sel-add" aria-haspopup="menu" ${none}>${esc(t('menu.addPlaylist'))}</button>
+    <button class="pill-btn" data-act="sel-dl" ${none}>${esc(t('menu.download'))}</button>
+    ${selRemovable() ? `<button class="pill-btn danger" data-act="sel-remove" ${none}>${icon('trash')}${esc(t('sel.remove'))}</button>` : ''}
+    <button class="iconbtn" data-act="sel-close" title="${esc(t('sel.cancel'))}" aria-label="${esc(t('sel.cancel'))}">${icon('close')}</button>`;
+}
+const selTracks = () => [...sel].sort((a, b) => a - b).map((i) => pageTracks[i]).filter(Boolean);
+async function removeSelected() {
+  const tracks = selTracks(), kind = pageCtx?.kind;
+  if (!await confirmDialog(t('sel.removeQ', { tracks: tracksLabel(tracks.length) }), t(`sel.removeHint.${kind}`), t('sel.remove'), true)) return;
+  try {
+    if (kind === 'liked') {
+      for (const x of tracks) { await api.setLiked(x, false); state.liked.delete(x.id); }
+    } else if (kind === 'local') {
+      // shown positions shift as songs go: remove from the bottom up
+      for (const i of [...sel].sort((a, b) => b - a)) await api.removeFromPlaylist(pageCtx.id, i);
+    } else if (kind === 'downloads') {
+      for (const x of tracks) await api.deleteDownload(x.id);
+    }
+    toast(t('toast.removedN', { tracks: tracksLabel(tracks.length) }));
+  } catch (e) { toast(errText(e), 'err'); }
+  selectMode(false);
+  await refreshLibrary();
+  renderDock();
+  render();
+}
+// While selecting, a tap on a song row ticks it instead of playing it.
+document.addEventListener('click', (e) => {
+  if (!selecting()) return;
+  const row = e.target.closest('#main .trow');
+  if (!row || e.target.closest('a')) return;
+  e.preventDefault(); e.stopPropagation();
+  const i = Number(row.dataset.idx);
+  sel.has(i) ? sel.delete(i) : sel.add(i);
+  row.classList.toggle('sel', sel.has(i));
+  renderSelBar();
+}, true);
 
 // cached data of the currently rendered collection page, used by action buttons
 let pageTracks = [];
@@ -1072,6 +1131,25 @@ const actions = {
   'open-eq': () => eqSheet(),
   'close-overlay': () => closeOverlays(),
   'to-stage': () => toStage(),
+  'select-mode': () => selectMode(!selecting()),
+  'sel-close': () => selectMode(false),
+  'sel-all': () => {
+    const all = sel.size === pageTracks.length;
+    sel.clear();
+    if (!all) pageTracks.forEach((_, i) => sel.add(i));
+    $$('#main .trow').forEach((r) => r.classList.toggle('sel', sel.has(Number(r.dataset.idx))));
+    renderSelBar();
+  },
+  'sel-next': () => { player.playNext(selTracks()); toast(t('toast.playNext')); selectMode(false); },
+  'sel-dl': () => { downloadTracks(selTracks()); selectMode(false); },
+  'sel-remove': () => removeSelected(),
+  'sel-add': (el) => {
+    const tracks = selTracks(), b = el.getBoundingClientRect();
+    showMenu(b.left, b.top - 8, [
+      { label: t('menu.newPlaylist'), run: () => { newPlaylist(tracks); selectMode(false); } },
+      ...state.playlists.map((p) => ({ label: p.name, run: () => { addTo(p, tracks); selectMode(false); } })),
+    ]);
+  },
   'to-browse': () => { if (!nav.stack.length) go('home'); else morph('browse'); },
   'focus-search': () => focusSearch(),
   'toggle-play': () => player.toggle(),
@@ -1609,6 +1687,7 @@ player.on('error', (x) => toast(t('toast.playFail', { title: x.title }), 'err'))
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (closeOverlays() || closeSide()) return;
+    if (selecting()) { selectMode(false); return; }
     if (document.activeElement === sInput) return;
     if (mode() === 'browse') toStage();
     return;
