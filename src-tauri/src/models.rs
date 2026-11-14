@@ -86,6 +86,15 @@ pub struct ArtistPage {
     pub singles: Vec<AlbumCard>,
     pub playlists: Vec<PlaylistCard>,
     pub similar: Vec<ArtistCard>,
+    /// All of the artist's songs as a playlist ("Show all" under Popular).
+    pub tracks_playlist_id: Option<String>,
+}
+
+/// Every album and single of an artist ("Show all" on the artist page).
+#[derive(Serialize)]
+pub struct ArtistReleases {
+    pub albums: Vec<AlbumCard>,
+    pub singles: Vec<AlbumCard>,
 }
 
 #[derive(Serialize)]

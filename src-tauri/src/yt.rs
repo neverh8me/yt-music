@@ -344,9 +344,20 @@ impl Yt {
             singles: singles.into_iter().map(album).collect(),
             playlists: a.playlists.into_iter().map(playlist_card).collect(),
             similar: a.similar_artists.into_iter().map(artist).collect(),
+            tracks_playlist_id: a.tracks_playlist_id,
             name: a.name,
             id: a.id,
         })
+    }
+
+    /// The artist page lists only some releases; this asks for all of them (more requests).
+    pub async fn artist_releases(&self, id: &str) -> Result<ArtistReleases> {
+        let a = self.rp.query().music_artist(id, true).await?;
+        let (singles, albums): (Vec<_>, Vec<_>) = a
+            .albums
+            .into_iter()
+            .partition(|x| matches!(x.album_type, AlbumType::Single | AlbumType::Ep));
+        Ok(ArtistReleases { albums: albums.into_iter().map(album).collect(), singles: singles.into_iter().map(album).collect() })
     }
 
     pub async fn playlist(&self, id: &str, authenticated: bool) -> Result<PlaylistPage> {

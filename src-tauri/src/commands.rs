@@ -152,6 +152,11 @@ pub async fn get_artist(core: St<'_>, id: String) -> Res<serde_json::Value> {
 }
 
 #[tauri::command]
+pub async fn get_artist_releases(core: St<'_>, id: String) -> Res<serde_json::Value> {
+    page(core.inner(), format!("artist-all:{id}"), 6 * 60 * MIN, move |c| async move { c.yt.artist_releases(&id).await }).await
+}
+
+#[tauri::command]
 pub async fn get_playlist(core: St<'_>, id: String) -> Res<serde_json::Value> {
     let logged_in = core.db.get_setting("logged_in").is_some();
     page(core.inner(), format!("playlist:{id}"), 10 * MIN, move |c| async move { c.yt.playlist_any(&id, logged_in).await }).await

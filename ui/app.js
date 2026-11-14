@@ -154,7 +154,7 @@ window.addEventListener('popstate', () => {
 const nav = { stack: [], pos: -1 };
 let renderToken = 0;
 const LAYERS = ['library', 'history', 'downloads'];
-const DETAIL = ['album', 'artist', 'playlist', 'local-playlist'];
+const DETAIL = ['album', 'artist', 'playlist', 'local-playlist', 'artist-releases'];
 const layerName = (v) => ({ home: t('layer.forYou'), library: t('nav.library'), history: t('lib.history'), downloads: t('lib.downloads') }[v]);
 
 function go(view, params = {}, push = true) {
@@ -268,6 +268,9 @@ const scrollBtns = () => `<div class="scroll-btns"><button class="iconbtn" data-
 /** One horizontally scrolling row of cards. */
 const carousel = (title, items, kind) => !items?.length ? '' :
   `<section class="shelf">${secHead(title, '', scrollBtns())}<div class="carousel-track scroller">${items.map((i) => card(kind, i)).join('')}</div></section>`;
+/** An artist's albums or singles: a row with "Show all", which opens every release as a grid. */
+const releases = (title, items, id, name, which) => !items?.length ? '' :
+  `<section class="shelf">${secHead(title, '', `<div class="scroll-btns"><button class="pill-btn" data-act="artist-all" data-id="${esc(id)}" data-name="${esc(name)}" data-which="${which}">${esc(t('act.showAll'))}</button>${scrollBtns().replace(/^<div class="scroll-btns">|<\/div>$/g, '')}</div>`)}<div class="carousel-track scroller">${items.map((i) => card('album', i)).join('')}</div></section>`;
 const shelf = (title, items, kind, label = '') => !items?.length ? '' :
   `<section class="shelf">${secHead(title, label)}<div class="grid">${items.map((i) => card(kind, i)).join('')}</div></section>`;
 
@@ -471,6 +474,13 @@ const views = {
     ${a.description ? `<p class="desc">${esc(a.description)}</p>` : ''}</div>`;
   },
 
+  async 'artist-releases'({ id, name, which }) {
+    const r = await api.artistReleases(id);
+    const items = which === 'singles' ? r.singles : r.albums;
+    return `<div class="page"><div class="hero-text"><div class="hero-kind">${esc(name || '')}</div>
+      <h1>${esc(t(which === 'singles' ? 'artist.singles' : 'artist.albums'))}</h1></div>
+      <div class="grid">${items.map((i) => card('album', i)).join('')}</div></div>`;
+  },
   async artist({ id }) {
     const a = await api.artist(id);
     pageTracks = a.tracks; pageCtx = { kind: 'artist', id, title: a.name }; pageColor = a.cover;
@@ -482,9 +492,10 @@ const views = {
         <div class="actions" style="margin-top:0">${playBtn('play-page')}${actBtn('radio-artist', 'radio', t('act.artistRadio'))}${actBtn('shuffle-page', 'shuffle', t('act.shuffle'))}</div>
       </div></div>
       <div class="page artist">
-      ${a.tracks.length ? `<section class="shelf"><h2>${esc(t('artist.popular'))}</h2>${trackRows(a.tracks.slice(0, 10), { ctx: pageCtx, plays: true })}</section>` : ''}
-      ${carousel(t('artist.albums'), a.albums, 'album')}
-      ${carousel(t('artist.singles'), a.singles, 'album')}
+      ${a.tracks.length ? `<section class="shelf"><h2>${esc(t('artist.popular'))}</h2>${trackRows(a.tracks.slice(0, 10), { ctx: pageCtx, plays: true })}
+        ${a.tracks_playlist_id ? `<div><button class="pill-btn" data-go="playlist" data-id="${esc(a.tracks_playlist_id)}">${esc(t('act.showAll'))}</button></div>` : ''}</section>` : ''}
+      ${releases(t('artist.albums'), a.albums, id, a.name, 'albums')}
+      ${releases(t('artist.singles'), a.singles, id, a.name, 'singles')}
       ${carousel(t('artist.playlists'), a.playlists, 'playlist')}
       ${carousel(t('artist.similar'), a.similar, 'artist')}
       ${a.description ? `<section class="shelf"><h2>${esc(t('artist.about'))}</h2><p class="desc">${esc(a.description)}</p></section>` : ''}
@@ -1136,6 +1147,7 @@ const actions = {
   'close-overlay': () => closeOverlays(),
   'to-stage': () => toStage(),
   'nav-back': () => navBack(),
+  'artist-all': (el) => go('artist-releases', { id: el.dataset.id, name: el.dataset.name, which: el.dataset.which }),
   'select-mode': () => selectMode(!selecting()),
   'sel-close': () => selectMode(false),
   'sel-all': () => {
