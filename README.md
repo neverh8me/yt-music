@@ -59,25 +59,14 @@ Grab the file for your platform from [Releases](../../releases). Each release li
 | Platform | File |
 |---|---|
 | Windows | `*_Windows-x64-setup.exe` |
-| macOS, Apple Silicon (M1/M2/M3/M4) — *archived, later* | `*_macOS-Apple-Silicon.dmg` |
-| macOS, Intel — *archived, later* | `*_macOS-Intel.dmg` |
-| Linux (Debian/Ubuntu) — *archived, later* | `*_Linux-x64.deb` |
 | Android | `*_Android.apk` (allow installing from unknown sources) |
-| iPhone (**beta**) — *archived, later* | `*-beta_iOS-unsigned.ipa`, installed with [AltStore](https://altstore.io) or [Sideloadly](https://sideloadly.io) |
-
-The iPhone build is a **beta** and is not in the App Store. The `.ipa` is unsigned: AltStore or Sideloadly signs it with your own Apple ID and installs it. With a free Apple ID the app works for 7 days, then has to be refreshed the same way (AltStore can do it by itself). It does not update itself: install the new `.ipa` over the old one.
-
-macOS builds aren't notarized: on first launch right-click the app and choose **Open**.
 
 ### System requirements
 
 | Platform | Minimum |
 |---|---|
 | Windows | Windows 10 or 11, 64-bit (WebView2 is built in) |
-| macOS | macOS 11 Big Sur or later (Apple Silicon or Intel) |
-| Linux | Ubuntu 22.04+, Debian 12+ or another distro with glibc 2.35 and WebKitGTK 4.1; x86-64 |
 | Android | Android 7.0+ on a 64-bit ARM phone, with Android System WebView kept up to date (Google Play) |
-| iPhone (beta) | iOS 14+, a computer with AltStore or Sideloadly, and an Apple ID |
 
 The desktop apps download [yt-dlp](https://github.com/yt-dlp/yt-dlp) on first start (about 18 MB) to play music. An internet connection is needed except for downloaded songs.
 

@@ -59,25 +59,14 @@
 | Платформа | Файл |
 |---|---|
 | Windows | `*_Windows-x64-setup.exe` |
-| macOS, Apple Silicon (M1/M2/M3/M4) — *архив, позже* | `*_macOS-Apple-Silicon.dmg` |
-| macOS, Intel — *архив, позже* | `*_macOS-Intel.dmg` |
-| Linux (Debian/Ubuntu) — *архив, позже* | `*_Linux-x64.deb` |
 | Android | `*_Android.apk` (разреши установку из неизвестных источников) |
-| iPhone (**бета**) — *архив, позже* | `*-beta_iOS-unsigned.ipa`, устанавливается через [AltStore](https://altstore.io) или [Sideloadly](https://sideloadly.io) |
-
-Сборка для iPhone — **бета**, в App Store её нет. Файл `.ipa` не подписан: AltStore или Sideloadly подписывает его твоим Apple ID и устанавливает. С бесплатным Apple ID приложение работает 7 дней, потом его нужно обновить тем же способом (AltStore умеет делать это сам). Само оно не обновляется: установи новый `.ipa` поверх старого.
-
-Сборки для macOS не нотаризованы: при первом запуске нажми на приложение правой кнопкой и выбери **Открыть**.
 
 ### Системные требования
 
 | Платформа | Минимум |
 |---|---|
 | Windows | Windows 10 или 11, 64-бит (WebView2 уже встроен) |
-| macOS | macOS 11 Big Sur или новее (Apple Silicon или Intel) |
-| Linux | Ubuntu 22.04+, Debian 12+ или другой дистрибутив с glibc 2.35 и WebKitGTK 4.1; x86-64 |
 | Android | Android 7.0+ на 64-битном ARM-телефоне, с обновлённым Android System WebView (Google Play) |
-| iPhone (бета) | iOS 14+, компьютер с AltStore или Sideloadly и Apple ID |
 
 На ПК при первом запуске приложение скачивает [yt-dlp](https://github.com/yt-dlp/yt-dlp) (около 18 МБ) для воспроизведения. Интернет нужен, кроме скачанных треков.
 
