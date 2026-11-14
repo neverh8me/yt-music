@@ -340,7 +340,7 @@ const views = {
         ${q.cover ? `<img src="${esc(thumb(q.cover))}" alt="">` : `<span class="qc ${q.cls || ''}">${icon(q.ic || 'music')}</span>`}
         <span>${esc(q.title)}</span></div>`).join('')}</div>`;
     if (mixes.length) {
-      html += `<section class="shelf">${secHead(t('home.madeForYou'))}<div class="mixes">${mixes.map((s, i) => {
+      html += `<section class="shelf">${secHead(t('home.madeForYou'), '', scrollBtns())}<div class="mixes scroller">${mixes.map((s, i) => {
         const lid = registerList(s.tracks);
         const cover = s.tracks.find((x) => x.cover)?.cover;
         const artists = [...new Set(s.tracks.flatMap((x) => (x.artists || []).map((a) => a.name)))].slice(0, 3).join(', ');
@@ -1066,7 +1066,8 @@ const actions = {
   },
   scroll: (el) => {
     const box = el.closest('.shelf')?.querySelector('.scroller');
-    if (box) box.scrollBy({ left: Number(el.dataset.dir) * box.clientWidth * 0.8, behavior: reducedMotion() ? 'auto' : 'smooth' });
+    if (box) box.scrollBy({ left: Number(el.dataset.dir) * box.clientWidth, // a page; snapping lines up the cards
+      behavior: reducedMotion() ? 'auto' : 'smooth' });
   },
   'open-eq': () => eqSheet(),
   'close-overlay': () => closeOverlays(),

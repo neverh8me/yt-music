@@ -984,3 +984,16 @@ body.frame-mac.fullscreen #topbar { padding-left: var(--gutter); }
 
 /* It's an app, not a page: no pinch or double-tap zoom (scrolling stays). */
 html { touch-action: pan-x pan-y; }
+
+/* Sideways rows show whole cards only (no card cut at the edge): --n per view, the arrows
+   move a page, and scrolling snaps to a card. Phones keep a peek of the next card. */
+.mixes { --n: 4; grid-auto-columns: calc((100% - (var(--n) - 1) * 24px) / var(--n)); scroll-snap-type: x mandatory; }
+.mix-card { scroll-snap-align: start; }
+.picks { scroll-snap-type: x mandatory; }
+.picks .tracklist { --n: 4; grid-auto-columns: calc((100% - (var(--n) - 1) * var(--s4)) / var(--n)); }
+@media (max-width: 1280px) { .mixes, .picks .tracklist { --n: 3; } }
+@media (max-width: 980px) { .mixes, .picks .tracklist { --n: 2; } }
+@media (max-width: 760px) {
+  .mixes { grid-auto-columns: 62%; }
+  .picks .tracklist { grid-auto-columns: 85%; }
+}
