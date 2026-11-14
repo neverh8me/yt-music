@@ -6500,7 +6500,7 @@ dependencies = [
 
 [[package]]
 name = "ytubem"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "axum",

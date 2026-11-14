@@ -1,6 +1,6 @@
 [package]
 name = "ytubem"
-version = "1.0.1"
+version = "1.1.0"
 edition = "2024"
 description = "Fast unofficial YouTube Music client"
 license = "GPL-3.0-only"
