@@ -24,11 +24,23 @@ pub fn register_identity() {
     use windows_sys::Win32::System::Registry::*;
     use windows_sys::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
     let key_path = wide(&format!("Software\\Classes\\AppUserModelId\\{AUMID}"));
-    let exe = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_default();
+    // Toasts and the media overlay take the icon from IconUri, which must be an image file
+    // (an .exe path shows no icon). Keep a copy of the app icon in the app's local data folder.
+    let icon = std::env::var_os("LOCALAPPDATA")
+        .map(|d| std::path::PathBuf::from(d).join("io.github.neverh8me.ytmusic").join("icon.png"))
+        .and_then(|p| {
+            const PNG: &[u8] = include_bytes!("../icons/128x128@2x.png");
+            if std::fs::metadata(&p).map(|m| m.len()).ok() != Some(PNG.len() as u64) {
+                std::fs::create_dir_all(p.parent()?).ok()?;
+                std::fs::write(&p, PNG).ok()?;
+            }
+            Some(p.display().to_string())
+        })
+        .unwrap_or_default();
     unsafe {
         let mut hkey: HKEY = std::ptr::null_mut();
         if RegCreateKeyExW(HKEY_CURRENT_USER, key_path.as_ptr(), 0, std::ptr::null(), 0, KEY_SET_VALUE, std::ptr::null(), &mut hkey, std::ptr::null_mut()) == 0 {
-            for (name, value) in [("DisplayName", "YT Music".to_string()), ("IconUri", exe)] {
+            for (name, value) in [("DisplayName", "YT Music".to_string()), ("IconUri", icon)] {
                 let (n, v) = (wide(name), wide(&value));
                 RegSetValueExW(hkey, n.as_ptr(), 0, REG_SZ, v.as_ptr().cast(), (v.len() * 2) as u32);
             }
