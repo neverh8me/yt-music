@@ -54,16 +54,16 @@
 
 Скачай файл для своей платформы из [Releases](../../releases). В каждом релизе есть список изменений.
 
-> **Версия 1.1.0 вышла для Windows и Android.** Сборки для macOS, Linux и iPhone вернутся в одном из следующих релизов; до тех пор на macOS и Linux можно оставаться на [1.0.1](../../releases/tag/v1.0.1).
+> Актуальная версия — для **Windows и Android**. **macOS, Linux и iPhone пока в архиве** и будут выпущены позже; последняя сборка для macOS и Linux — [1.0.1](../../releases/tag/v1.0.1).
 
 | Платформа | Файл |
 |---|---|
 | Windows | `*_Windows-x64-setup.exe` |
-| macOS, Apple Silicon (M1/M2/M3/M4) | `*_macOS-Apple-Silicon.dmg` |
-| macOS, Intel | `*_macOS-Intel.dmg` |
-| Linux (Debian/Ubuntu) | `*_Linux-x64.deb` |
+| macOS, Apple Silicon (M1/M2/M3/M4) — *архив, позже* | `*_macOS-Apple-Silicon.dmg` |
+| macOS, Intel — *архив, позже* | `*_macOS-Intel.dmg` |
+| Linux (Debian/Ubuntu) — *архив, позже* | `*_Linux-x64.deb` |
 | Android | `*_Android.apk` (разреши установку из неизвестных источников) |
-| iPhone (**бета**) | `*-beta_iOS-unsigned.ipa`, устанавливается через [AltStore](https://altstore.io) или [Sideloadly](https://sideloadly.io) |
+| iPhone (**бета**) — *архив, позже* | `*-beta_iOS-unsigned.ipa`, устанавливается через [AltStore](https://altstore.io) или [Sideloadly](https://sideloadly.io) |
 
 Сборка для iPhone — **бета**, в App Store её нет. Файл `.ipa` не подписан: AltStore или Sideloadly подписывает его твоим Apple ID и устанавливает. С бесплатным Apple ID приложение работает 7 дней, потом его нужно обновить тем же способом (AltStore умеет делать это сам). Само оно не обновляется: установи новый `.ipa` поверх старого.
 

@@ -54,16 +54,16 @@ A fast, unofficial YouTube Music client for Windows, macOS, Linux and Android, w
 
 Grab the file for your platform from [Releases](../../releases). Each release lists what changed.
 
-> **1.1.0 is out for Windows and Android.** The macOS, Linux and iPhone builds come back in a later release; until then macOS and Linux users can keep [1.0.1](../../releases/tag/v1.0.1).
+> **Windows and Android** get the current version. **macOS, Linux and iPhone are archived for now** and will be released later; the last macOS and Linux build is [1.0.1](../../releases/tag/v1.0.1).
 
 | Platform | File |
 |---|---|
 | Windows | `*_Windows-x64-setup.exe` |
-| macOS, Apple Silicon (M1/M2/M3/M4) | `*_macOS-Apple-Silicon.dmg` |
-| macOS, Intel | `*_macOS-Intel.dmg` |
-| Linux (Debian/Ubuntu) | `*_Linux-x64.deb` |
+| macOS, Apple Silicon (M1/M2/M3/M4) — *archived, later* | `*_macOS-Apple-Silicon.dmg` |
+| macOS, Intel — *archived, later* | `*_macOS-Intel.dmg` |
+| Linux (Debian/Ubuntu) — *archived, later* | `*_Linux-x64.deb` |
 | Android | `*_Android.apk` (allow installing from unknown sources) |
-| iPhone (**beta**) | `*-beta_iOS-unsigned.ipa`, installed with [AltStore](https://altstore.io) or [Sideloadly](https://sideloadly.io) |
+| iPhone (**beta**) — *archived, later* | `*-beta_iOS-unsigned.ipa`, installed with [AltStore](https://altstore.io) or [Sideloadly](https://sideloadly.io) |
 
 The iPhone build is a **beta** and is not in the App Store. The `.ipa` is unsigned: AltStore or Sideloadly signs it with your own Apple ID and installs it. With a free Apple ID the app works for 7 days, then has to be refreshed the same way (AltStore can do it by itself). It does not update itself: install the new `.ipa` over the old one.
 
