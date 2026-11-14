@@ -154,6 +154,7 @@ window.addEventListener('popstate', () => {
 const nav = { stack: [], pos: -1 };
 let renderToken = 0;
 const LAYERS = ['library', 'history', 'downloads'];
+const DETAIL = ['album', 'artist', 'playlist', 'local-playlist'];
 const layerName = (v) => ({ home: t('layer.forYou'), library: t('nav.library'), history: t('lib.history'), downloads: t('lib.downloads') }[v]);
 
 function go(view, params = {}, push = true) {
@@ -186,7 +187,10 @@ async function render() {
     clearTimeout(sk);
     if (token !== renderToken) return;
     // The four layers share a tab bar at the top.
-    el.innerHTML = (LAYERS.includes(entry.view) ? `<div class="page layer-head">${layerBar(entry.view)}</div>` : '') + html;
+    // Pages opened from somewhere (album, artist, playlist) get a way back.
+    const back = nav.pos > 0 && DETAIL.includes(entry.view)
+      ? `<button class="iconbtn page-back" data-act="nav-back" title="${esc(t('nav.back'))}" aria-label="${esc(t('nav.back'))}">${icon('chev-left')}</button>` : '';
+    el.innerHTML = back + (LAYERS.includes(entry.view) ? `<div class="page layer-head">${layerBar(entry.view)}</div>` : '') + html;
     $('#main').scrollTop = entry.scroll || 0;
     applyPageColor(token);
     if (['liked', 'local-playlist', 'playlist', 'album'].includes(entry.view) && autoDl.has(dlKey(pageCtx))) downloadTracks(pageTracks, true);
@@ -1131,6 +1135,7 @@ const actions = {
   'open-eq': () => eqSheet(),
   'close-overlay': () => closeOverlays(),
   'to-stage': () => toStage(),
+  'nav-back': () => navBack(),
   'select-mode': () => selectMode(!selecting()),
   'sel-close': () => selectMode(false),
   'sel-all': () => {

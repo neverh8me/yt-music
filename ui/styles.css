@@ -1019,3 +1019,7 @@ body.selecting #main .trow.sel { background: color-mix(in srgb, var(--accent) 14
   body.selecting #main .trow .tnum { display: grid; }
   body.selecting #main .trow .tright { display: none; }
 }
+
+/* Back from an album / artist / playlist page: stays at the top-left while scrolling. */
+.page-back { position: sticky; top: var(--s3); z-index: 3; display: grid; margin: var(--s2) 0 var(--s2); width: 40px; height: 40px;
+  background: var(--surface-dense); border: 1px solid var(--stroke); backdrop-filter: var(--blur); }
