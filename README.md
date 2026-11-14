@@ -25,7 +25,7 @@ A fast, unofficial YouTube Music client for Windows, macOS, Linux and Android, w
 ## Features
 
 **Listening**
-- Home made for you: mixes from your history and likes, quick picks, top songs chart, new releases, recently played
+- Home made for you: your mix and a mix for each favourite artist, from your history and likes; quick picks, top songs chart, new releases, recently played
 - Search songs, albums, artists and playlists with suggestions; album, artist (with play counts) and playlist pages
 - Songs only: music videos are left out of search, charts, artist pages and radio
 - A player that expands from the bottom bar to full screen: big cover, controls, and *Up next* / *Lyrics* right beside it
@@ -34,11 +34,14 @@ A fast, unofficial YouTube Music client for Windows, macOS, Linux and Android, w
 - Time-synced lyrics (the current line lights up, click a line to jump), from [LRCLIB](https://lrclib.net) with YouTube Music lyrics as fallback
 - 10-band equalizer with presets
 - 18+ songs play when you're signed in (age-verified account)
+- On Windows, macOS and Linux, signed-in playback goes through YouTube Music's own web player: songs start at once and don't stop half-way
 
 **Library**
 - Sidebar with your library and playlists, always at hand
 - Liked songs, your own playlists and history, stored locally in SQLite
 - Sign in with Google to bring your YouTube likes and playlists; account menu on your avatar (sync, switch account, sign out)
+- Select several songs, or all of them, on any page: play next, add to a playlist, download or remove at once
+- Likes and unlikes reach your YouTube Music account
 - Offline downloads (high or standard quality), stored encrypted in the app's own `.ytmc` format, so they play only inside YT Music
 
 **App**
@@ -50,6 +53,8 @@ A fast, unofficial YouTube Music client for Windows, macOS, Linux and Android, w
 ## Install
 
 Grab the file for your platform from [Releases](../../releases). Each release lists what changed.
+
+> **1.1.0 is out for Windows and Android.** The macOS, Linux and iPhone builds come back in a later release; until then macOS and Linux users can keep [1.0.1](../../releases/tag/v1.0.1).
 
 | Platform | File |
 |---|---|
@@ -110,12 +115,13 @@ src-tauri/src/
   recommend.rs      "made for you" mixes from your history and likes
   color.rs          dominant cover colour for tints
   auth.rs / account.rs   "Sign in with Google", account name and avatar
+  webplayer.rs      desktop: YouTube Music's web player in a hidden window, driven from Rust
   media.rs          Windows media overlay (system media controls)
   db.rs             SQLite: likes, playlists, history, downloads, cache, settings
 ```
 
 - **Metadata** (search, albums, artists, charts, radio, account) comes from [rustypipe](https://codeberg.org/ThetaDev/rustypipe).
-- **Audio on desktop:** every song goes through [yt-dlp](https://github.com/yt-dlp/yt-dlp), signed in with your session when you're logged in, so 18+ songs play too. At most 3 yt-dlp processes run at once, the same song is never resolved twice in parallel, URLs are cached until they expire, and the next two songs (and the one under your pointer) are resolved in advance, so skipping doesn't wait.
+- **Audio on desktop:** once you're signed in, songs play through YouTube Music's own web player in a hidden window (`webplayer.rs`): our interface drives it and shows its state. Songs start at once, 18+ songs play, and YouTube shows its ads as on the site. Guests, downloaded songs and the fallback (if the site doesn't start a song) use the built-in player below, with [yt-dlp](https://github.com/yt-dlp/yt-dlp) resolving the streams.
 - **Audio on Android** (no yt-dlp): a direct InnerTube `player` request with the visionOS client races rustypipe. For 18+ songs the app makes a signed request and solves the stream URL challenges with yt-dlp's own solver ([yt-dlp/ejs](https://github.com/yt-dlp/ejs), Unlicense) running in the webview's JS engine; the parsed player is cached on disk.
 - googlevideo rejects open-ended ranges, so the local proxy fetches upstream in bounded 4 MB chunks and stitches them into one stream. Seeking works, and stream URLs never reach the web layer.
 
@@ -124,6 +130,7 @@ src-tauri/src/
 ```sh
 cargo test                            # offline tests
 cargo test -- --ignored --nocapture   # live tests against real YouTube
+node tests/player.test.mjs            # player engine switching (UI, fake backend)
 ```
 
 ## Keyboard shortcuts
