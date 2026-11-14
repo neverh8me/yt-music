@@ -1855,6 +1855,7 @@ listen('signed-out', async () => {
   if (mode() === 'browse') render();
   toast(t('eng.signInAgain'));
 });
+listen('youtube-like-failed', (title) => toast(t('toast.ytLikeFail', { title }), 'err'));
 listen('google-login-closed', () => { if (nav.stack[nav.pos]?.view === 'settings') render(); });
 // Android sign-in result: the YouTube cookies from LoginActivity (null if cancelled).
 window.__androidLogin = async (cookie) => {

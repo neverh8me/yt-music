@@ -290,8 +290,20 @@ pub fn liked_ids(core: St) -> Res<Vec<String>> {
 }
 
 #[tauri::command]
-pub fn set_liked(core: St, track: Track, liked: bool) -> Res<()> {
-    core.db.set_liked(&track, liked).map_err(e)
+pub fn set_liked(app: AppHandle, core: St, track: Track, liked: bool) -> Res<()> {
+    core.db.set_liked(&track, liked).map_err(e)?;
+    // Signed in: the same heart on YouTube, in the background (the app already shows the change).
+    if let Some(cookie) = core.yt.session_cookie() {
+        let core = core.inner().clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(err) = crate::account::set_like(&core.http, &cookie, &track.id, liked).await {
+                eprintln!("like on YouTube failed for {}: {err:#}", track.id);
+                use tauri::Emitter;
+                let _ = app.emit("youtube-like-failed", track.title);
+            }
+        });
+    }
+    Ok(())
 }
 
 #[tauri::command]

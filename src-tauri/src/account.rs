@@ -41,15 +41,19 @@ fn find<'a>(v: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::Value
     }
 }
 
-pub async fn fetch(http: &reqwest::Client, cookie_header: &str) -> Result<Account> {
+/// A signed-in YouTube Music API call (`endpoint` e.g. "account/account_menu"), as the website makes it.
+async fn post(http: &reqwest::Client, cookie_header: &str, endpoint: &str, extra: serde_json::Value) -> Result<serde_json::Value> {
     let sapisid = cookie_value(cookie_header, "SAPISID")
         .or_else(|| cookie_value(cookie_header, "__Secure-3PAPISID"))
         .ok_or_else(|| anyhow!("no SAPISID in session"))?;
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs();
-    let body = serde_json::json!({ "context": { "client": {
+    let mut body = serde_json::json!({ "context": { "client": {
         "clientName": "WEB_REMIX", "clientVersion": "1.20250101.01.00", "hl": "en" } } });
-    let resp: serde_json::Value = http
-        .post(format!("{ORIGIN}/youtubei/v1/account/account_menu?prettyPrint=false"))
+    if let (Some(b), Some(x)) = (body.as_object_mut(), extra.as_object()) {
+        b.extend(x.clone());
+    }
+    Ok(http
+        .post(format!("{ORIGIN}/youtubei/v1/{endpoint}?prettyPrint=false"))
         .header("Cookie", cookie_header)
         .header("Authorization", sapisid_hash(sapisid, now))
         .header("Origin", ORIGIN)
@@ -62,7 +66,19 @@ pub async fn fetch(http: &reqwest::Client, cookie_header: &str) -> Result<Accoun
         .await?
         .error_for_status()?
         .json()
-        .await?;
+        .await?)
+}
+
+/// Like or unlike a song on the account, like the heart on YouTube Music does.
+/// rustypipe can read likes but not change them.
+pub async fn set_like(http: &reqwest::Client, cookie_header: &str, video_id: &str, liked: bool) -> Result<()> {
+    let endpoint = if liked { "like/like" } else { "like/removelike" };
+    post(http, cookie_header, endpoint, serde_json::json!({ "target": { "videoId": video_id } })).await?;
+    Ok(())
+}
+
+pub async fn fetch(http: &reqwest::Client, cookie_header: &str) -> Result<Account> {
+    let resp = post(http, cookie_header, "account/account_menu", serde_json::json!({})).await?;
     let header = find(&resp, "activeAccountHeaderRenderer").ok_or_else(|| anyhow!("no account header in response"))?;
     let name = header["accountName"]["runs"][0]["text"]
         .as_str()
