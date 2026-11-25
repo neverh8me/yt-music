@@ -17,6 +17,7 @@ mod recommend;
 mod secrets;
 mod secure_store;
 mod server;
+mod share;
 mod state;
 mod update;
 mod vault;
@@ -147,6 +148,8 @@ pub fn run() {
             commands::delete_playlist,
             commands::add_to_playlist,
             commands::remove_from_playlist,
+            commands::share_playlist,
+            commands::parse_playlist_link,
             commands::get_history,
             commands::download_tracks,
             commands::list_downloads,

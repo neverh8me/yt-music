@@ -77,6 +77,62 @@ pub async fn set_like(http: &reqwest::Client, cookie_header: &str, video_id: &st
     Ok(())
 }
 
+// ------------------------------------------------------------ playlists on the account
+// The same calls YouTube Music's website makes to create and edit playlists (rustypipe only
+// reads them). Used to publish a local playlist for sharing (share.rs).
+
+/// Songs per request when filling a playlist; YouTube rejects very large batches.
+const BATCH: usize = 100;
+
+/// `browse/edit_playlist` answers `"status": "STATUS_SUCCEEDED"` when every action applied.
+fn check_edit(resp: &serde_json::Value) -> Result<()> {
+    match resp["status"].as_str() {
+        Some(s) if s.contains("SUCCEEDED") => Ok(()),
+        s => Err(anyhow!("YouTube refused the playlist change ({})", s.unwrap_or("no status"))),
+    }
+}
+
+/// Create an unlisted playlist (anyone with the link can open it, it isn't listed or
+/// searchable) holding `video_ids` in order. Returns its id.
+pub async fn create_playlist(http: &reqwest::Client, cookie_header: &str, title: &str, video_ids: &[String]) -> Result<String> {
+    let (first, rest) = video_ids.split_at(video_ids.len().min(BATCH));
+    let resp = post(http, cookie_header, "playlist/create", serde_json::json!({
+        "title": title, "description": "", "privacyStatus": "UNLISTED", "videoIds": first,
+    }))
+    .await?;
+    let id = resp["playlistId"].as_str().ok_or_else(|| anyhow!("YouTube didn't create the playlist"))?.to_string();
+    if let Err(err) = add_to_playlist(http, cookie_header, &id, rest).await {
+        // don't leave a half-filled copy behind
+        let _ = delete_playlist(http, cookie_header, &id).await;
+        return Err(err);
+    }
+    Ok(id)
+}
+
+/// Append songs to the end of a playlist on the account.
+pub async fn add_to_playlist(http: &reqwest::Client, cookie_header: &str, playlist_id: &str, video_ids: &[String]) -> Result<()> {
+    for chunk in video_ids.chunks(BATCH) {
+        let actions: Vec<_> = chunk
+            .iter()
+            .map(|v| serde_json::json!({ "action": "ACTION_ADD_VIDEO", "addedVideoId": v, "dedupeOption": "DEDUPE_OPTION_SKIP" }))
+            .collect();
+        let resp = post(http, cookie_header, "browse/edit_playlist", serde_json::json!({ "playlistId": playlist_id, "actions": actions })).await?;
+        check_edit(&resp)?;
+    }
+    Ok(())
+}
+
+pub async fn rename_playlist(http: &reqwest::Client, cookie_header: &str, playlist_id: &str, title: &str) -> Result<()> {
+    let actions = serde_json::json!([{ "action": "ACTION_SET_PLAYLIST_NAME", "playlistName": title }]);
+    let resp = post(http, cookie_header, "browse/edit_playlist", serde_json::json!({ "playlistId": playlist_id, "actions": actions })).await?;
+    check_edit(&resp)
+}
+
+pub async fn delete_playlist(http: &reqwest::Client, cookie_header: &str, playlist_id: &str) -> Result<()> {
+    post(http, cookie_header, "playlist/delete", serde_json::json!({ "playlistId": playlist_id })).await?;
+    Ok(())
+}
+
 pub async fn fetch(http: &reqwest::Client, cookie_header: &str) -> Result<Account> {
     let resp = post(http, cookie_header, "account/account_menu", serde_json::json!({})).await?;
     let header = find(&resp, "activeAccountHeaderRenderer").ok_or_else(|| anyhow!("no account header in response"))?;
@@ -119,5 +175,12 @@ mod tests {
         let s = sapisid_hash("abc", 1);
         assert!(s.starts_with("SAPISIDHASH 1_") && s.len() == "SAPISIDHASH 1_".len() + 40);
         assert_eq!(cookie_from_cache(r#"{"x":{"cookie":"SID=1; SAPISID=z"}}"#).as_deref(), Some("SID=1; SAPISID=z"));
+    }
+
+    #[test]
+    fn edit_status() {
+        assert!(check_edit(&serde_json::json!({ "status": "STATUS_SUCCEEDED" })).is_ok());
+        assert!(check_edit(&serde_json::json!({ "status": "STATUS_FAILED" })).is_err());
+        assert!(check_edit(&serde_json::json!({})).is_err());
     }
 }

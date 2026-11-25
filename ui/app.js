@@ -522,7 +522,7 @@ const views = {
     return `<div class="page">${collectionHeader({
       cover: p.cover, kind: t('kind.playlist'), title: p.title,
       meta: `${p.author ? `<b>${esc(p.author)}</b> · ` : ''}${tracksLabel(p.tracks.length)}, ${totalTime(p.tracks)}`,
-      actions: collectionActions() + actBtn('save-page', 'plus', t('act.saveToLibrary')),
+      actions: collectionActions() + actBtn('save-page', 'plus', t('act.saveToLibrary')) + actBtn('share-yt', 'share', t('act.share')),
     })}${p.description ? `<p class="desc">${esc(p.description)}</p>` : ''}${trackRows(p.tracks, { ctx: pageCtx })}</div>`;
   },
 
@@ -532,7 +532,7 @@ const views = {
     return `<div class="page">${collectionHeader({
       cover: p.tracks[0]?.cover, kind: t('kind.playlist'), title: p.name,
       meta: `${tracksLabel(p.tracks.length)}${p.tracks.length ? `, ${totalTime(p.tracks)}` : ''}`,
-      actions: collectionActions() + actBtn('rename-local', 'edit', t('act.rename')) + actBtn('delete-local', 'trash', t('act.deletePlaylist')),
+      actions: collectionActions() + actBtn('share-local', 'share', t('act.share')) + actBtn('rename-local', 'edit', t('act.rename')) + actBtn('delete-local', 'trash', t('act.deletePlaylist')),
     })}${p.tracks.length ? trackRows(p.tracks, { ctx: pageCtx })
       : `<div class="empty">${icon('music')}<h2>${esc(t('local.empty'))}</h2><button class="pill-btn primary" data-act="focus-search">${icon('search')}${esc(t('nav.search'))}</button></div>`}</div>`;
   },
@@ -567,6 +567,7 @@ const views = {
     return `<div class="page library-page">
       <div class="layers-bar"><div></div><div class="actions" style="margin-top:0">
         <button class="pill-btn" data-act="new-playlist">${icon('plus')}${esc(t('nav.newPlaylist'))}</button>
+        <button class="pill-btn" data-act="import-link">${icon('link')}${esc(t('nav.addByLink'))}</button>
         ${state.settings.logged_in ? `<button class="pill-btn" data-act="sync">${icon('sync')}${esc(t('set.sync'))}</button>` : ''}</div></div>
       <div class="grid">
         ${specialCard('liked', 'liked-cover', 'heart-fill', t('lib.liked'), `${t('lib.playlist')} · ${tracksLabel(state.liked.size)}`)}
@@ -994,13 +995,13 @@ async function startRadio(x) {
   } catch (e) { toast(errText(e), 'err'); }
 }
 
-function promptDialog(title, value = '') {
+function promptDialog(title, value = '', okLabel = t('dlg.save'), placeholder = '') {
   return new Promise((resolve) => {
     lastFocus = document.activeElement;
     const root = $('#modal-root');
     root.innerHTML = `<div class="modal-bg"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="pd-h"><h2 id="pd-h">${esc(title)}</h2>
-      <input class="text-in" id="modal-in" value="${esc(value)}" spellcheck="false" aria-labelledby="pd-h">
-      <div class="row end"><button class="pill-btn" id="m-cancel">${esc(t('dlg.cancel'))}</button><button class="pill-btn primary" id="m-ok">${esc(t('dlg.save'))}</button></div></div></div>`;
+      <input class="text-in" id="modal-in" value="${esc(value)}" placeholder="${esc(placeholder)}" spellcheck="false" aria-labelledby="pd-h">
+      <div class="row end"><button class="pill-btn" id="m-cancel">${esc(t('dlg.cancel'))}</button><button class="pill-btn primary" id="m-ok">${esc(okLabel)}</button></div></div></div>`;
     const inp = $('#modal-in');
     inp.focus(); inp.select();
     const done = (v) => { root.innerHTML = ''; resolve(v); lastFocus?.focus?.(); };
@@ -1019,6 +1020,42 @@ async function newPlaylist(tracks = []) {
   await refreshLibrary();
   toast(t(tracks.length ? 'toast.createdAdded' : 'toast.created', { name }));
   if (!tracks.length) go('local-playlist', { id });
+}
+
+// ---------------------------------------------------------------- sharing
+const ytPlaylistUrl = (id) => `https://music.youtube.com/playlist?list=${encodeURIComponent(id)}`;
+const copyText = (text) => navigator.clipboard.writeText(text).then(() => true, () => false);
+
+/** The link to send, with a Copy button (also copied right away when the system allows it). */
+async function shareDialog(name, url, note = '') {
+  const copied = await copyText(url);
+  lastFocus = document.activeElement;
+  const root = $('#modal-root');
+  root.innerHTML = `<div class="modal-bg"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="sh-h"><h2 id="sh-h">${esc(t('share.title', { name }))}</h2>
+    <input class="text-in" id="sh-url" value="${esc(url)}" readonly spellcheck="false" aria-labelledby="sh-h">
+    <p class="muted" style="margin:0">${esc(t('share.hint'))}</p>
+    ${note ? `<p class="muted" style="margin:0">${esc(note)}</p>` : ''}
+    <div class="row end"><button class="pill-btn" id="sh-close">${esc(t('rp.close'))}</button><button class="pill-btn primary" id="sh-copy">${icon(copied ? 'check' : 'link')}${esc(t(copied ? 'share.copied' : 'share.copy'))}</button></div></div></div>`;
+  const done = () => { root.innerHTML = ''; lastFocus?.focus?.(); };
+  const inp = $('#sh-url');
+  inp.onfocus = () => inp.select();
+  $('#sh-close').onclick = done;
+  $('#sh-copy').onclick = async () => {
+    if (await copyText(url)) $('#sh-copy').innerHTML = `${icon('check')}${esc(t('share.copied'))}`;
+    else { inp.focus(); inp.select(); }
+  };
+  root.firstChild.addEventListener('dismiss', done);
+  $('.modal-bg', root).onclick = (e) => { if (e.target.classList.contains('modal-bg')) done(); };
+  $('#sh-copy').focus();
+}
+
+/** Open someone's playlist from a link (YouTube Music / YouTube): its page has "Save to library". */
+async function importByLink() {
+  const text = await promptDialog(t('dlg.importLink'), '', t('dlg.open'), 'https://music.youtube.com/playlist?list=…');
+  if (!text) return;
+  const id = await api.parsePlaylistLink(text);
+  if (!id) return toast(t('toast.badLink'), 'err');
+  go('playlist', { id });
 }
 
 async function addTo(p, tracks) {
@@ -1086,6 +1123,29 @@ const actions = {
     go('library');
   },
   'new-playlist': () => newPlaylist(),
+  'import-link': () => importByLink(),
+  /** Rail "+": a new playlist, or someone's playlist from a link. */
+  'rail-add': (el) => {
+    const b = el.getBoundingClientRect();
+    showMenu(b.left, b.bottom + 4, [
+      { label: t('nav.newPlaylist'), run: () => newPlaylist() },
+      { label: t('nav.addByLink'), run: () => importByLink() },
+    ]);
+  },
+  'share-yt': () => shareDialog(pageCtx.title, ytPlaylistUrl(pageCtx.id)),
+  'share-local': async (el) => {
+    if (!state.settings.logged_in) { toast(t('toast.shareSignIn'), 'err'); accountMenu(); return; }
+    if (!pageTracks.length) return toast(t('toast.shareEmpty'), 'err');
+    const { id, title } = pageCtx;
+    const inner = el.innerHTML;
+    el.disabled = true;
+    el.setAttribute('aria-busy', 'true');
+    el.innerHTML = `${icon('spinner', 'spin')}${esc(t('act.share'))}`;
+    el.title = t('share.preparing');
+    try { await shareDialog(title, await api.sharePlaylist(id), t('share.published')); }
+    catch (e) { toast(t('toast.shareFail', { e: errText(e) }), 'err'); }
+    finally { if (el.isConnected) { el.disabled = false; el.innerHTML = inner; el.removeAttribute('aria-busy'); el.title = ''; } }
+  },
   'radio-artist': () => { if (pageTracks[0]) startRadio(pageTracks[0]); },
   'radio-recent': () => { if (homeRecent[0]) startRadio(homeRecent[0]); },
   'play-liked': async () => {
@@ -1288,6 +1348,14 @@ function doSearch(q) {
   q = q.trim();
   if (!q) return;
   suggest.classList.add('hidden');
+  // a pasted playlist link opens that playlist instead of searching for the URL
+  if (/[?&]list=/.test(q)) {
+    api.parsePlaylistLink(q).then((id) => { if (!id) return runSearch(q); sInput.value = ''; sInput.blur(); go('playlist', { id }); }, () => runSearch(q));
+    return;
+  }
+  runSearch(q);
+}
+function runSearch(q) {
   sInput.value = q;
   try {
     const h = JSON.parse(localStorage.getItem('searches') || '[]').filter((x) => x !== q);

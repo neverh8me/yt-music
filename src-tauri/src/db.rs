@@ -62,6 +62,17 @@ impl Db {
         // v0.3: audio quality of downloads. ALTER fails harmlessly if the column exists.
         let _ = conn.execute("ALTER TABLE downloads ADD COLUMN codec TEXT", []);
         let _ = conn.execute("ALTER TABLE downloads ADD COLUMN kbps INTEGER", []);
+        // v1.2: local playlists shared through YouTube (share.rs): the YouTube copy and
+        // what it was published with, so sharing again reuses or updates the same link.
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS playlist_shares (
+                playlist_id INTEGER PRIMARY KEY REFERENCES playlists(id) ON DELETE CASCADE,
+                yt_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                ids TEXT NOT NULL,
+                ts INTEGER NOT NULL
+            );",
+        )?;
         Ok(Self { conn: Mutex::new(conn) })
     }
 
@@ -231,6 +242,41 @@ impl Db {
             [id],
         )?;
         Ok(LocalPlaylist { id, name, tracks })
+    }
+
+    // ---- shared playlists (share.rs)
+    pub fn playlist_share(&self, playlist_id: i64) -> Result<Option<crate::share::Published>> {
+        let row: Option<(String, String, String)> = self
+            .c()
+            .query_row(
+                "SELECT yt_id, name, ids FROM playlist_shares WHERE playlist_id = ?1",
+                [playlist_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?;
+        Ok(row.map(|(yt_id, name, ids)| crate::share::Published {
+            yt_id,
+            name,
+            ids: serde_json::from_str(&ids).unwrap_or_default(),
+        }))
+    }
+
+    pub fn set_playlist_share(&self, playlist_id: i64, p: &crate::share::Published) -> Result<()> {
+        self.c().execute(
+            "INSERT INTO playlist_shares(playlist_id, yt_id, name, ids, ts) VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(playlist_id) DO UPDATE SET yt_id = excluded.yt_id, name = excluded.name,
+                ids = excluded.ids, ts = excluded.ts",
+            params![playlist_id, p.yt_id, p.name, serde_json::to_string(&p.ids)?, now()],
+        )?;
+        Ok(())
+    }
+
+    /// YouTube ids of the copies made for sharing (hidden from the account's playlists).
+    pub fn shared_yt_ids(&self) -> Result<Vec<String>> {
+        let conn = self.c();
+        let mut st = conn.prepare("SELECT yt_id FROM playlist_shares")?;
+        let rows = st.query_map([], |r| r.get(0))?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
     }
 
     // ---- history
@@ -422,5 +468,24 @@ mod tests {
         let mut ids = db.liked_ids().unwrap();
         ids.sort();
         assert_eq!(ids, ["a", "b"]);
+    }
+
+    #[test]
+    fn remembers_shared_playlists() {
+        use crate::share::Published;
+        let dir = std::env::temp_dir().join(format!("ytubem-db-share-{}", now()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = Db::open(&dir.join("t.db")).unwrap();
+        let id = db.create_playlist("Mix", &[t("a"), t("b")]).unwrap();
+        assert_eq!(db.playlist_share(id).unwrap(), None);
+        let p = Published { yt_id: "PLx".into(), name: "Mix".into(), ids: vec!["a".into(), "b".into()] };
+        db.set_playlist_share(id, &p).unwrap();
+        assert_eq!(db.playlist_share(id).unwrap(), Some(p.clone()));
+        let p2 = Published { yt_id: "PLy".into(), ..p };
+        db.set_playlist_share(id, &p2).unwrap();
+        assert_eq!(db.playlist_share(id).unwrap(), Some(p2));
+        assert_eq!(db.shared_yt_ids().unwrap(), ["PLy"]);
+        db.delete_playlist(id).unwrap(); // the share goes with the playlist
+        assert!(db.shared_yt_ids().unwrap().is_empty());
     }
 }

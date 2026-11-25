@@ -56,6 +56,8 @@ export const api = {
   deletePlaylist: (id) => invoke('delete_playlist', { id }),
   addToPlaylist: (id, tracks) => invoke('add_to_playlist', { id, tracks }),
   removeFromPlaylist: (id, pos) => invoke('remove_from_playlist', { id, pos }),
+  sharePlaylist: (id) => invoke('share_playlist', { id }),
+  parsePlaylistLink: (text) => invoke('parse_playlist_link', { text }),
   history: () => invoke('get_history'),
 
   // Downloads

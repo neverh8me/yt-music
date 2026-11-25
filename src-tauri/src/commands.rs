@@ -351,6 +351,59 @@ pub fn remove_from_playlist(core: St, id: i64, pos: usize) -> Res<()> {
     core.db.remove_from_playlist(id, pos).map_err(e)
 }
 
+// ------------------------------------------------------------- sharing (share.rs)
+/// Publish a local playlist to the signed-in YouTube account (unlisted) and return its link.
+/// Sharing again reuses the same link, or updates it when songs were only added or the
+/// playlist was renamed; otherwise a fresh copy replaces the old one.
+#[tauri::command]
+pub async fn share_playlist(core: St<'_>, id: i64) -> Res<String> {
+    use crate::account;
+    use crate::share::{self, Plan, Published};
+    let cookie = core.yt.session_cookie().ok_or("Sign in to share playlists")?;
+    let p = core.db.get_playlist(id).map_err(e)?;
+    let ids: Vec<String> = p.tracks.iter().map(|t| t.id.clone()).collect();
+    if ids.is_empty() {
+        return Err("The playlist is empty".into());
+    }
+    if ids.len() > share::MAX_TRACKS {
+        return Err(format!("YouTube playlists hold up to {} songs", share::MAX_TRACKS));
+    }
+    let prev = core.db.playlist_share(id).map_err(e)?;
+    let http = &core.http;
+    let updated = match (share::plan(prev.as_ref(), &p.name, &ids), &prev) {
+        (Plan::Reuse, Some(prev)) => return Ok(share::share_url(&prev.yt_id)),
+        (Plan::Update { add, rename }, Some(prev)) => {
+            let r = async {
+                if rename {
+                    account::rename_playlist(http, &cookie, &prev.yt_id, &p.name).await?;
+                }
+                account::add_to_playlist(http, &cookie, &prev.yt_id, &add).await
+            };
+            // e.g. deleted on YouTube, or published from another account: make a new copy
+            r.await.is_ok().then(|| prev.yt_id.clone())
+        }
+        _ => None,
+    };
+    let yt_id = match updated {
+        Some(id) => id,
+        None => {
+            let new_id = account::create_playlist(http, &cookie, &p.name, &ids).await.map_err(e)?;
+            if let Some(old) = &prev {
+                let _ = account::delete_playlist(http, &cookie, &old.yt_id).await;
+            }
+            new_id
+        }
+    };
+    core.db.set_playlist_share(id, &Published { yt_id: yt_id.clone(), name: p.name, ids }).map_err(e)?;
+    Ok(share::share_url(&yt_id))
+}
+
+/// The playlist id in a pasted link (YouTube / YouTube Music) or a bare id; `None` if none.
+#[tauri::command]
+pub fn parse_playlist_link(text: String) -> Option<String> {
+    crate::share::playlist_id_from_link(&text)
+}
+
 #[tauri::command]
 pub fn get_history(core: St) -> Res<Vec<Track>> {
     core.db.history(200).map_err(e)
@@ -509,8 +562,10 @@ pub fn remote_playlists(core: St) -> Res<Vec<PlaylistCard>> {
         .get_setting("remote_playlists")
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
-    // "SE" (podcast "episodes for later") can't be opened by clients; hide it.
-    Ok(all.into_iter().filter(|p| p.id != "SE").collect())
+    // "SE" (podcast "episodes for later") can't be opened by clients; hide it. Copies made
+    // for sharing your own playlists are hidden too: the local playlist is already listed.
+    let shared = core.db.shared_yt_ids().unwrap_or_default();
+    Ok(all.into_iter().filter(|p| p.id != "SE" && !shared.contains(&p.id)).collect())
 }
 
 #[tauri::command]

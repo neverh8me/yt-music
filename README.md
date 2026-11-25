@@ -40,6 +40,7 @@ A fast, unofficial YouTube Music client for Windows, macOS, Linux and Android, w
 - Liked songs, your own playlists and history, stored locally in SQLite
 - Sign in with Google to bring your YouTube likes and playlists; account menu on your avatar (sync, switch account, sign out)
 - Select several songs, or all of them, on any page: play next, add to a playlist, download or remove at once
+- Share your playlists by link: *Share* puts the playlist on your YouTube account as unlisted and copies its music.youtube.com link. Open a friend's link with *+ → Add by link* (or paste it into search) and save the playlist to your library
 - Likes and unlikes reach your YouTube Music account
 - Offline downloads (high or standard quality) saved as plain `.m4a` / `.webm` files named "Artist - Title" (in your Music folder on desktop), so other players can open them too
 
