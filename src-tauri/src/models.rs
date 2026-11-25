@@ -57,6 +57,9 @@ pub struct PlaylistCard {
 #[derive(Serialize, Default)]
 pub struct SearchResults {
     pub tracks: Vec<Track>,
+    /// Videos (covers, instrumentals, live versions, uploads that aren't released as songs);
+    /// played as audio only, like everything else.
+    pub videos: Vec<Track>,
     pub albums: Vec<AlbumCard>,
     pub artists: Vec<ArtistCard>,
     pub playlists: Vec<PlaylistCard>,

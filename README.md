@@ -27,7 +27,7 @@ A fast, unofficial YouTube Music client for Windows, macOS, Linux and Android, w
 **Listening**
 - Home made for you: your mix and a mix for each favourite artist, from your history and likes; quick picks, top songs chart, new releases, recently played
 - Search songs, albums, artists and playlists with suggestions; album, artist (with play counts) and playlist pages; on an artist, *Show all* opens every song, album and single
-- Songs only: music videos are left out of search, charts, artist pages and radio
+- Songs first: charts, artist pages and radio are songs only; search also lists videos (minus/instrumental, covers, live versions) separately, and they play as audio only
 - A player that expands from the bottom bar to full screen: big cover, controls, and *Up next* / *Lyrics* right beside it
 - Queue, shuffle, repeat (all / one), seeking from the bar, volume, sleep timer, media keys
 - Autoplay: when the queue runs out, similar songs (radio) keep playing

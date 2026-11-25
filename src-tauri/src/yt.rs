@@ -6,7 +6,7 @@ use rustypipe::client::RustyPipe;
 use rustypipe::model::richtext::ToPlaintext;
 use rustypipe::model::{
     AlbumItem, AlbumType, ArtistId, ArtistItem, AudioFormat, AudioStream, MusicPlaylistItem,
-    Thumbnail, TrackItem,
+    Thumbnail, TrackItem, TrackType,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -97,9 +97,18 @@ fn artists(a: &[ArtistId]) -> Vec<ArtistRef> {
 }
 
 /// Songs only: the app plays music, not music videos (or podcast episodes). Applied to what
-/// the app picks (search, charts, artist pages, radio), not to the user's own playlists.
+/// the app picks (charts, artist pages, radio, the songs in search), not to the user's own
+/// playlists. Search lists videos separately (see `search_videos`).
 fn song(t: &TrackItem) -> bool {
     t.track_type.is_track()
+}
+
+/// Videos for the "Videos (audio only)" part of search: no podcast episodes, nothing already
+/// among the songs. Many minus/instrumental, cover and live versions exist only as videos.
+/// They play like songs: the player only ever fetches the audio stream.
+fn search_videos(videos: Vec<Track>, songs: &[Track]) -> Vec<Track> {
+    let mut seen: std::collections::HashSet<String> = songs.iter().map(|t| t.id.clone()).collect();
+    videos.into_iter().filter(|v| seen.insert(v.id.clone())).take(20).collect()
 }
 
 pub fn track(t: TrackItem) -> Track {
@@ -212,16 +221,21 @@ impl Yt {
 
     pub async fn search(&self, q: &str) -> Result<SearchResults> {
         let qr = self.rp.query();
-        let (tracks, albums, artists, playlists) = tokio::join!(
+        let (tracks, videos, albums, artists, playlists) = tokio::join!(
             qr.music_search_tracks(q),
+            qr.music_search_videos(q),
             qr.music_search_albums(q),
             qr.music_search_artists(q),
             qr.music_search_playlists(q, false),
         );
         // Tracks are the critical part; other categories degrade gracefully.
-        let tracks = tracks.context("track search failed")?;
+        let tracks: Vec<Track> = tracks.context("track search failed")?.items.items.into_iter().filter(song).map(track).collect();
+        let videos = videos
+            .map(|r| r.items.items.into_iter().filter(|v| v.track_type == TrackType::Video).map(track).collect())
+            .unwrap_or_default();
         Ok(SearchResults {
-            tracks: tracks.items.items.into_iter().filter(song).map(track).collect(),
+            videos: search_videos(videos, &tracks),
+            tracks,
             albums: albums
                 .map(|r| r.items.items.into_iter().map(album).take(12).collect())
                 .unwrap_or_default(),
@@ -930,7 +944,7 @@ mod live_tests {
         let dir = std::env::temp_dir().join("ytubem-test");
         let yt = Yt::new(dir.join("rp"), dir.join("bin"), &[0u8; 32]).unwrap();
         let r = yt.search("Океан Ельзи").await.unwrap();
-        println!("tracks={} albums={} artists={} playlists={}", r.tracks.len(), r.albums.len(), r.artists.len(), r.playlists.len());
+        println!("tracks={} videos={} albums={} artists={} playlists={}", r.tracks.len(), r.videos.len(), r.albums.len(), r.artists.len(), r.playlists.len());
         let t = &r.tracks[0];
         println!("first: {} ({:?})", t.title, t.duration);
         println!("suggest: {:?}", yt.suggestions("океан").await.unwrap());
@@ -953,6 +967,24 @@ mod live_tests {
         println!("cached in {:?}", start.elapsed());
     }
 }
+#[cfg(test)]
+mod search_tests {
+    use super::*;
+
+    fn t(id: &str) -> Track {
+        Track { id: id.into(), title: id.into(), artists: vec![], album: None, duration: None, cover: None, plays: None }
+    }
+
+    #[test]
+    fn videos_skip_songs_and_repeats() {
+        let ids = |v: Vec<Track>| v.into_iter().map(|t| t.id).collect::<Vec<_>>();
+        let songs = [t("song1"), t("both")];
+        assert_eq!(ids(search_videos(vec![t("v1"), t("both"), t("v2"), t("v1")], &songs)), ["v1", "v2"]);
+        let many: Vec<Track> = (0..30).map(|i| t(&format!("v{i}"))).collect();
+        assert_eq!(search_videos(many, &[]).len(), 20);
+    }
+}
+
 #[cfg(test)]
 mod native_tests {
     use super::*;

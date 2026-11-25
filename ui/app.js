@@ -446,8 +446,9 @@ const views = {
     }
     const r = await api.search(q);
     const top = r.tracks.slice(0, 20);
+    const videos = r.videos || []; // pages cached by older versions have none
     let html = `<div class="page"><h1 class="search-h">${esc(t('search.results', { q }))}</h1>`;
-    if (!top.length && !r.albums.length && !r.artists.length && !r.playlists.length) {
+    if (!top.length && !videos.length && !r.albums.length && !r.artists.length && !r.playlists.length) {
       return html + `<div class="empty">${icon('search')}<h2>${esc(t('search.none'))}</h2></div></div>`;
     }
     if (r.artists[0]) {
@@ -460,6 +461,8 @@ const views = {
     } else if (top.length) {
       html += `<section class="shelf"><h2>${esc(t('search.songs'))}</h2>${trackRows(top)}</section>`;
     }
+    // Videos (minus/instrumental, covers, live...): they play as audio, like songs.
+    if (videos.length) html += `<section class="shelf"><h2>${esc(t('search.videos'))}</h2>${trackRows(videos, { plays: true })}</section>`;
     html += shelf(t('search.artists'), r.artists, 'artist');
     html += shelf(t('search.albums'), r.albums, 'album');
     html += shelf(t('search.playlists'), r.playlists, 'playlist');
